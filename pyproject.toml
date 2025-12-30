@@ -1,0 +1,30 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "cmake>=3.15", "ninja"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "qiskit-medusa"
+version = "0.1.0"
+description = "A high-performance MTBDD quantum simulator for Qiskit"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "Roman Janota", email = "janotaroman02@gmail.com"}
+]
+dependencies = [
+    "qiskit>=1.0",
+    "numpy>=1.20",
+]
+
+[project.optional-dependencies]
+# For development (installed via 'pip install -e .[dev]')
+dev = [
+    "pytest",
+    "black",
+    "pylint"
+]
+
+[tool.scikit-build]
+# ensure that libmedusa.so ends up inside your python package folder
+install.components = ["runtime"]
+minimum-version = "build-system.requires"
