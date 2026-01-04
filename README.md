@@ -50,24 +50,27 @@ pip install -e ".[dev]"
 ## Quick Start
 
 ```python
-from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
-from qiskit_medusa import MedusaSimulator
+from qiskit import QuantumCircuit, transpile
+from qiskit_medusa.backend import MedusaBackend
+
+# Initialize the Medusa backend
+backend = MedusaBackend()
 
 # Create a simple quantum circuit
-qr = QuantumRegister(2, 'q')
-cr = ClassicalRegister(2, 'c')
-qc = QuantumCircuit(qr, cr)
-qc.h(qr[0])
-qc.cx(qr[0], qr[1])
-qc.measure(qr, cr)
+qc = QuantumCircuit(2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure_all()
 
-# Simulate using MEDUSA backend
-simulator = MedusaSimulator()
-job = simulator.run(qc, shots=1000)
+# Transpile the circuit for the Medusa backend
+transpiled_qc = transpile(qc, backend=backend)
+
+# Run the circuit on the Medusa backend
+job = backend.run(transpiled_qc, shots=5000)
 result = job.result()
-counts = result.get_counts(qc)
+counts = result.get_counts()
 
-print(counts)
+print("Counts:", counts)
 ```
 
 ## Dependencies
