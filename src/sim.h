@@ -3,12 +3,15 @@
  * @brief Module performing quantum circuit simulation
  */
 
+#ifndef SIMULATOR_H
+#define SIMULATOR_H
+
 #include <stdbool.h>
 #include <time.h>
 #include "mtbdd.h"
 
-#ifndef SIMULATOR_H
-#define SIMULATOR_H
+// Forward declaration to avoid circular dependency
+typedef struct simulator_ctx simulator_ctx_t;
 
 /// Flags to run the simulation with
 typedef struct sim_flags {
@@ -34,33 +37,33 @@ void init_sim_info(sim_info_t *i);
 
 /**
  * Parses a given QASM file and simulates this circuit
- * 
+ *
  * @param in input QASM file
- * 
+ *
  * @param circ MTBDD that will represent the final quantum state
- * 
+ *
  * @param flags Flags to run the simulation with
- * 
+ *
  * @param info Structure to store the simulation info to (needs to be initialized beforehand)
- * 
+ *
  * @return true if the circuit has been properly initialized and simulated
- * 
+ *
  */
-bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info);
+bool sim_file(FILE *in, simulator_ctx_t *ctx);
 
 /**
  * Measures all bits in the given array (compatible only with measurement at the end of the circuit)
- * 
+ *
  * @param samples the total number of samples
- * 
+ *
  * @param output stream for the output of results
- * 
+ *
  * @param circ MTBDD representation of the end circuit state
- * 
+ *
  * @param n number of qubits in the circuit
- * 
+ *
  * @param bits_to_measure array for storing the qubits that are to be measured
- * 
+ *
  */
 void measure_all(unsigned long samples, FILE *output, MTBDD circ, int n, int *bits_to_measure);
 

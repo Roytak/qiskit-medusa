@@ -10,6 +10,7 @@
 #include "qparam.h"
 #include "htab.h"
 #include "error.h"
+#include "medusa.h"
 
 /// Max. supported length of the string with classical bit register identifier (includes '\0')
 #define BIT_REG_ID_MAX_LEN (30+1)
@@ -107,7 +108,7 @@ static long long parse_num(FILE *in, char end, char alt_end)
     return n;
 }
 
-/** 
+/**
  * Function for getting the next qubit index for the command on the given line.
  */
 static uint32_t get_q_num(FILE *in)
@@ -155,7 +156,7 @@ static uint64_t get_iters(FILE *in)
         step = end;
         end = parse_num(in, ']', NO_ALT_END);
     }
-    
+
     // Note: expects 64bit long long
     if (step == 0) {
         error_exit("Invalid number of loop iterations - step must be non-zero.\n");
@@ -171,13 +172,13 @@ static uint64_t get_iters(FILE *in)
     }
 
     iters = (end + 1 - start) / step;
-    
+
     return ((uint64_t) iters);
 }
 
 /**
  * Skips a one line comment (checks if the given char doesn't mark a start of a comment)
- * 
+ *
  * @return Returns 1 if comment has been skipped, -1 if EOF was reached, 0 if there is no comment
  */
 static int skip_one_line_comments(char c, FILE *in)
@@ -198,7 +199,7 @@ static int skip_one_line_comments(char c, FILE *in)
     return 0;
 }
 
-bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info)
+bool sim_file(FILE *in, simulator_ctx_t *ctx)
 {
     int c;
     char cmd[CMD_MAX_LEN]; // initialized to 0s in the loop
@@ -211,6 +212,9 @@ bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info)
     mtbdd_symb_t symbc;
     uint64_t iters;
     struct timespec t_loop_start, t_loop_finish, t_eval_start;
+    MTBDD *circ = &ctx->circuit;
+    sim_flags_t *flags = &ctx->sim_flags;
+    sim_info_t *info = &ctx->sim_info;
 
     while ((c = fgetc(in)) != EOF) {
         for (int i=0; i < CMD_MAX_LEN; i++) {
@@ -354,7 +358,7 @@ bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info)
                     iters--;
                     if (!iters) {
                         is_loop = false;
-                        clock_gettime(CLOCK_MONOTONIC, &t_loop_finish); 
+                        clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
                         // must be here because after if-else also the not finished loops appear
                         info->t_el_loop[info->n_loops] = get_time_el(t_loop_start, t_loop_finish);
                         info->n_loops++;
@@ -399,7 +403,7 @@ bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info)
                     ct = get_q_num(in);
                     qt = get_q_num(in);
                 }
-                
+
                 info->is_measure = true;
                 (info->bits_to_measure)[qt] = ct;
             }
@@ -459,7 +463,7 @@ bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info)
             }
             else if (strcasecmp(cmd, "mcx") == 0) { // supports 2 and 3 control qubits
                 qparam_list_t* qparams = qparam_list_create();
-                
+
                 // Read all control qubits and the target qubit and save it in qparams
                 while(true) {
                     qparam_list_insert_first(qparams, get_q_num(in));
@@ -480,7 +484,7 @@ bool sim_file(FILE *in, MTBDD *circ, const sim_flags_t *flags, sim_info_t *info)
                 }
 
                 (flags->opt_symb && is_loop)? gate_symb_mcx(&symbc.val, qparams) : gate_mcx(circ, qparams);
-                
+
                 qparam_list_del(qparams);
                 continue; // ';' already encountered
             }
@@ -516,7 +520,7 @@ void measure_all(unsigned long samples, FILE *output, MTBDD circ, int n, int *bi
     int curr_ct;
 
     htab_t *state_table = htab_init(n*n*n-1);
-    
+
     for (unsigned long i=0; i < samples; i++) {
         norm_coef = 1;
         for (int j=0; j < n; j++) {
