@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # global C flags
-# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0")
 
 # add cmake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
@@ -25,6 +25,7 @@ set(libsrc
     src/gates.c
     src/hash.c
     src/htab.c
+    src/medusa.c
     src/mtbdd_out.c
     src/mtbdd_symb_map.c
     src/mtbdd_symb_val.c
@@ -82,4 +83,7 @@ else()
 endif()
 
 # install the .so into the python package folder
-install(TARGETS medusa LIBRARY DESTINATION qiskit_medusa)
+install(TARGETS medusa
+    COMPONENT runtime
+    LIBRARY DESTINATION qiskit_medusa
+)

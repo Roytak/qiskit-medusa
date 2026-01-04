@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10", "cmake>=3.15", "ninja"]
+requires = ["scikit-build-core>=0.10"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -26,5 +26,6 @@ dev = [
 
 [tool.scikit-build]
 # ensure that libmedusa.so ends up inside your python package folder
+cmake.version = ">=3.15"
+wheel.packages = ["qiskit_medusa"]
 install.components = ["runtime"]
-minimum-version = "build-system.requires"
