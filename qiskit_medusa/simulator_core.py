@@ -52,8 +52,9 @@ lib.medusa_simulator_ctx_init.restype = SimulatorCtxPtr
 lib.medusa_simulate_file.argtypes = [SimulatorCtxPtr, c_char_p]
 lib.medusa_simulate_file.restype = c_int
 
-# int medusa_get_counts(simulator_ctx_t *ctx, char **indices[], double **probs);
+# int medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double **probs);
 lib.medusa_get_counts.argtypes = [SimulatorCtxPtr,
+                                   c_int,
                                    ctypes.POINTER(ctypes.POINTER(ctypes.c_char_p)),
                                    ctypes.POINTER(ctypes.POINTER(ctypes.c_double))]
 lib.medusa_get_counts.restype = c_int
@@ -79,11 +80,12 @@ class MedusaWrapper:
         lib.medusa_destroy()
         self.ctx = None
 
-    def get_counts(self, shots = 1024):
+    def get_counts(self, shots = 1024, num_qubits=None):
         indices_ptr = ctypes.POINTER(ctypes.c_char_p)()
         probs_ptr = ctypes.POINTER(ctypes.c_double)()
 
         res = lib.medusa_get_counts(self.ctx,
+                                    num_qubits if num_qubits is not None else 0,
                                     ctypes.byref(indices_ptr),
                                     ctypes.byref(probs_ptr))
         if res != 0:
@@ -96,8 +98,14 @@ class MedusaWrapper:
             index = indices_ptr[idx]
             if index is None:
                 break
+
+            # decode to bitstring
+            bitstring = index.decode('utf-8')
             prob = probs_ptr[idx]
-            counts[index.decode('utf-8')] = prob * shots
+
+            # round to nearest integer count
+            counts[bitstring] = int(round(prob * shots))
+
             idx += 1
 
         # free allocated memory
@@ -115,4 +123,3 @@ class MedusaWrapper:
             raise RuntimeError(f"Simulation failed for file: {filename}")
 
         print(f"Simulation successful for {filename}")
-

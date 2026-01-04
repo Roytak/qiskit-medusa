@@ -53,122 +53,125 @@ medusa_simulate_file(simulator_ctx_t *ctx, const char *filename)
 
     fclose(in);
 
-    return 0 ? r : 1;
+    return r ? 0 : 1;
 }
 
+/**
+ * @brief Recursively counts the number of leaves in an MTBDD.
+ *
+ * @param[in] node The MTBDD node to start counting from.
+ * @return The number of leaves in the MTBDD.
+ */
 static size_t
-medusa_get_mtbdd_leaf_count_r(MTBDD node)
+medusa_get_mtbdd_leaf_count_r(const MTBDD node)
 {
     if (mtbdd_isleaf(node)) {
         return 1;
-    } else if (node == mtbdd_true) {
-        return medusa_get_mtbdd_leaf_count_r(mtbdd_gethigh(node));
-    } else if (node == mtbdd_false) {
-        return medusa_get_mtbdd_leaf_count_r(mtbdd_getlow(node));
-    } else {
-        return medusa_get_mtbdd_leaf_count_r(mtbdd_getlow(node)) +
-               medusa_get_mtbdd_leaf_count_r(mtbdd_gethigh(node));
     }
-}
 
-static char *
-medusa_append_char(const char *str, char c)
-{
-    size_t len;
-    char *new_str;
-
-    len = strlen(str);
-    new_str = malloc(len + 2);
-    if (!new_str) {
-        fprintf(stderr, "Memory allocation failed\n");
-        return NULL;
-    }
-    strcpy(new_str, str);
-    new_str[len] = c;
-    new_str[len + 1] = '\0';
-    return new_str;
+    return medusa_get_mtbdd_leaf_count_r(mtbdd_getlow(node)) +
+           medusa_get_mtbdd_leaf_count_r(mtbdd_gethigh(node));
 }
 
 static int
-medusa_get_counts_r(MTBDD node, char **indices, double *probs, char *qubit_str, int idx)
+medusa_get_counts_r(const MTBDD node, char **indices, double *probs,
+        char *path_buffer, int depth, size_t *current_idx)
 {
-    double prob;
-    char *next_qubit_str1 = NULL, *next_qubit_str2 = NULL;
+    cnum *value;
 
+    /* Base case: we hit a leaf node */
     if (mtbdd_isleaf(node)) {
-        prob = mtbdd_getvalue(node);
-        indices[idx] = strdup(qubit_str);
-        if (!indices[idx]) {
+        /* terminate the string built up in the path buffer */
+        path_buffer[depth] = '\0';
+
+        /* store the probability */
+        value = (cnum *)mtbdd_getvalue(node);
+        probs[*current_idx] = calculate_prob(value);
+
+        /* store the qubit string */
+        indices[*current_idx] = strdup(path_buffer);
+        if (!indices[*current_idx]) {
             fprintf(stderr, "Memory allocation failed\n");
             return 1;
         }
-        probs[idx] = prob;
-    } else if (node == mtbdd_true) {
-        next_qubit_str1 = medusa_append_char(qubit_str, '1');
-        if (!next_qubit_str1) {
-            return 1;
-        }
-        return medusa_get_counts_r(mtbdd_gethigh(node), indices, probs, next_qubit_str1, idx + 1);
-    } else if (node == mtbdd_false) {
-        next_qubit_str1 = medusa_append_char(qubit_str, '0');
-        if (!next_qubit_str1) {
-            return 1;
-        }
-        return medusa_get_counts_r(mtbdd_getlow(node), indices, probs, next_qubit_str1, idx);
-    } else {
-        next_qubit_str1 = medusa_append_char(qubit_str, '0');
-        next_qubit_str2 = medusa_append_char(qubit_str, '1');
-        if (!next_qubit_str1 || !next_qubit_str2) {
-            free(next_qubit_str1);
-            free(next_qubit_str2);
-            return 1;
-        }
 
-        if (medusa_get_counts_r(mtbdd_getlow(node), indices, probs, next_qubit_str1, idx) ||
-                medusa_get_counts_r(mtbdd_gethigh(node), indices, probs, next_qubit_str2, idx + 1)) {
-            free(next_qubit_str1);
-            free(next_qubit_str2);
-            return 1;
-        }
+        (*current_idx)++;
+        return 0;
     }
 
-    free(next_qubit_str1);
-    free(next_qubit_str2);
+    /* Recursion */
+
+    /* traverse the '0' branch */
+    path_buffer[depth] = '0';
+    if (medusa_get_counts_r(mtbdd_getlow(node), indices, probs,
+                path_buffer, depth + 1, current_idx)) {
+        return 1;
+    }
+
+    /* traverse the '1' branch */
+    path_buffer[depth] = '1';
+    if (medusa_get_counts_r(mtbdd_gethigh(node), indices, probs,
+                path_buffer, depth + 1, current_idx)) {
+        return 1;
+    }
+
     return 0;
 }
 
 int
-medusa_get_counts(simulator_ctx_t *ctx, char **indices[], double **probs)
+medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double **probs)
 {
     size_t leaf_count;
+    char *path_buffer;
+    size_t current_idx = 0;
+    int max_depth;
 
-    if (!ctx || !indices || !probs) {
+    if (!ctx || (num_qubits <= 0) || !indices || !probs) {
         return 1;
     }
 
     *indices = NULL;
     *probs    = NULL;
 
+    max_depth = num_qubits;
+
     /* get number of leaves and allocate arrays */
     leaf_count = medusa_get_mtbdd_leaf_count_r(ctx->circuit);
-    *indices = malloc(leaf_count * sizeof(**indices));
-    *probs    = malloc(leaf_count * sizeof(**probs));
-    if (!*indices || !*probs) {
+    if (leaf_count == 0) {
+        /* empty tree */
+        return 0;
+    }
+
+    /* allocate result arrays */
+    *indices = malloc((leaf_count + 1) * sizeof(**indices));
+    *probs = malloc((leaf_count + 1) * sizeof(**probs));
+
+    /* allocate buffer for path string */
+    path_buffer = malloc((max_depth + 1) * sizeof(*path_buffer));
+
+    if (!*indices || !*probs || !path_buffer) {
         free(*indices);
         free(*probs);
+        free(path_buffer);
         fprintf(stderr, "Memory allocation failed\n");
         return 1;
     }
 
-    /* fill arrays */
-    if (medusa_get_counts_r(ctx->circuit, *indices, *probs, "", 0)) {
+    /* get counts recursively */
+    if (medusa_get_counts_r(ctx->circuit, *indices, *probs, path_buffer, 0, &current_idx)) {
         free(*indices);
         free(*probs);
+        free(path_buffer);
         *indices = NULL;
-        *probs    = NULL;
+        *probs = NULL;
         return 1;
     }
 
+    /* NULL-terminate the arrays */
+    (*indices)[current_idx] = NULL;
+    (*probs)[current_idx] = 0.0;
+
+    free(path_buffer);
     return 0;
 }
 

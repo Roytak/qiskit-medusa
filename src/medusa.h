@@ -40,11 +40,12 @@ int medusa_simulate_file(simulator_ctx_t *ctx, const char *filename);
  * @brief Retrieves the measurement counts from the simulation.
  *
  * @param ctx Pointer to the simulator context.
+ * @param num_qubits Number of qubits in the circuit.
  * @param indices NULL-terminated array of qubit state strings (e.g. "0101").
  * @param probs NULL-terminated array of corresponding probabilities. Index i in probs corresponds to index i in indices.
  * @return 0 on success, non-zero on failure.
  */
-int medusa_get_counts(simulator_ctx_t *ctx, char **indices[], double **probs);
+int medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double **probs);
 
 /**
  * @brief Frees memory allocated by ::medusa_get_counts().

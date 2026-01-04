@@ -27,12 +27,6 @@ coef_t c_k;
 /// Return min from two numbers
 #define GET_MIN(a, b) ((a) < (b))? (a) : (b)
 
-
-/**
- * Function for calculating the probability from a given complex number
- */
-static inline prob_t calculate_prob(cnum* prob);
-
 /* SETUP */
 void init_sylvan() {
     lace_start(1, 0); // 1 thread, default task queue size
@@ -93,7 +87,7 @@ void stop_sylvan()
 void my_leaf_create(uint64_t *ldata_p_raw)
 {
     cnum** ldata_p = (cnum**)ldata_p_raw; // Leaf data type is uint64_t, we store there ptr to our actual data
-    
+
     cnum* orig_ldata = *ldata_p;
     cnum* new_ldata = (cnum*)my_malloc(sizeof(cnum));
 
@@ -123,7 +117,7 @@ int my_leaf_equals(const uint64_t ldata_a_raw, const uint64_t ldata_b_raw)
 
 /**
  * Saves the leaf value string representation into the given buffer. If the number is too large, adds it into the map.
- * 
+ *
  * Needs both a,b,c,d,k and leaf data - to save the leaf data ptr in lnum_map
  * and to check the length agains a,b,c,d (possibly reduced).
  */
@@ -134,7 +128,7 @@ static int _leaf_to_str_output(char *buf, cnum *ldata, mpz_t a, mpz_t b, mpz_t c
     char buf_c[MAX_NUM_LEN + 2] = {0};
     char buf_d[MAX_NUM_LEN + 2] = {0};
     int chars_written;
-    
+
     if (mpz_sizeinbase(a, 10) > MAX_NUM_LEN) {
         chars_written = snprintf(buf_a, MAX_NUM_LEN + 2, VAR_NAME_FMT, lnum_map_add(&(ldata->a), shift_cnt));
         // variable length shouldn't exceed the max length but check to make sure
@@ -225,7 +219,7 @@ char* my_leaf_to_str(int complemented, uint64_t ldata_raw, char *sylvan_buf, siz
         sylvan_buf[chars_written] = '\0';
         return sylvan_buf;
     }
-    
+
     // Else return newly allocated string
     char *new_buf = (char*)my_malloc((chars_written + 1) * sizeof(char));
     memcpy(new_buf, ldata_string, chars_written * sizeof(char));
@@ -256,7 +250,7 @@ char* my_leaf_to_str_prob(int complemented, uint64_t ldata_raw, char *sylvan_buf
         sylvan_buf[chars_written] = '\0';
         return sylvan_buf;
     }
-    
+
     // Else return newly allocated string
     char *new_buf = (char*)my_malloc((chars_written + 1) * sizeof(char));
     memcpy(new_buf, ldata_string, chars_written * sizeof(char));
@@ -269,7 +263,7 @@ uint64_t my_leaf_hash(const uint64_t ldata_raw, const uint64_t seed)
     cnum *ldata = (cnum*) ldata_raw;
 
     uint64_t val = seed;
-    
+
     val = MY_HASH_COMB_GMP(val, ldata->d);
     val = MY_HASH_COMB_GMP(val, ldata->c);
     val = MY_HASH_COMB_GMP(val, ldata->b);
@@ -303,12 +297,12 @@ TASK_IMPL_2(MTBDD, mtbdd_plus, MTBDD*, p_a, MTBDD*, p_b)
         mpz_add(res_data.b, a_data->b, b_data->b);
         mpz_add(res_data.c, a_data->c, b_data->c);
         mpz_add(res_data.d, a_data->d, b_data->d);
-        
+
         if (!mpz_sgn(res_data.a) && !mpz_sgn(res_data.b) && !mpz_sgn(res_data.c) && !mpz_sgn(res_data.d)) {
             mpz_clears(res_data.a, res_data.b, res_data.c, res_data.d, NULL);
             return mtbdd_false;
         }
-        
+
         MTBDD res = mtbdd_makeleaf(ltype_id, (uint64_t) &res_data);
         mpz_clears(res_data.a, res_data.b, res_data.c, res_data.d, NULL);
         return res;
@@ -332,7 +326,7 @@ TASK_IMPL_2(MTBDD, mtbdd_minus, MTBDD*, p_a, MTBDD*, p_b)
     if (a == mtbdd_false){
         MTBDD b_minus = my_mtbdd_neg(b);
         return b_minus; // return -b
-    } 
+    }
     if (b == mtbdd_false) return a;
 
     // Compute a - b if both mtbdds are leaves
@@ -349,12 +343,12 @@ TASK_IMPL_2(MTBDD, mtbdd_minus, MTBDD*, p_a, MTBDD*, p_b)
         mpz_sub(res_data.b, a_data->b, b_data->b);
         mpz_sub(res_data.c, a_data->c, b_data->c);
         mpz_sub(res_data.d, a_data->d, b_data->d);
-        
+
         if (!mpz_sgn(res_data.a) && !mpz_sgn(res_data.b) && !mpz_sgn(res_data.c) && !mpz_sgn(res_data.d)) {
             mpz_clears(res_data.a, res_data.b, res_data.c, res_data.d, NULL);
             return mtbdd_false;
         }
-        
+
         MTBDD res = mtbdd_makeleaf(ltype_id, (uint64_t) &res_data);
         mpz_clears(res_data.a, res_data.b, res_data.c, res_data.d, NULL);
         return res;
@@ -424,7 +418,7 @@ TASK_IMPL_2(MTBDD, mtbdd_times_c, MTBDD, t, size_t, c_raw)
         mpz_mul_ui(res_data.b, ldata->b, c);
         mpz_mul_ui(res_data.c, ldata->c, c);
         mpz_mul_ui(res_data.d, ldata->d, c);
-        
+
         MTBDD res = mtbdd_makeleaf(ltype_id, (uint64_t) &res_data);
         mpz_clears(res_data.a, res_data.b, res_data.c, res_data.d, NULL);
         return res;
@@ -453,7 +447,7 @@ TASK_IMPL_2(MTBDD, mtbdd_negate, MTBDD, t, size_t, x)
         mpz_neg(res_data.b, ldata->b);
         mpz_neg(res_data.c, ldata->c);
         mpz_neg(res_data.d, ldata->d);
-        
+
         MTBDD res = mtbdd_makeleaf(ltype_id, (uint64_t) &res_data);
         mpz_clears(res_data.a, res_data.b, res_data.c, res_data.d, NULL);
         return res;
@@ -584,17 +578,21 @@ MTBDD mtbdd_b_xt_comp_mul_wrapper(MTBDD t, uint32_t xt)
     return mtbdd_apply(t, b_xt_comp, TASK(mtbdd_b_xt_mul));
 }
 
-static inline prob_t calculate_prob(cnum* prob)
+prob_t calculate_prob(cnum* prob)
 {
     mpf_t a, b, c, d;
+    prob_t prob_re, prob_im;
+    prob_t c_a, c_b, c_c, c_d;
+
+    if (!prob) {
+        return 0.0;
+    }
+
     mpf_inits(a, b, c, d, NULL);
     mpf_set_z(a, prob->a);
     mpf_set_z(b, prob->b);
     mpf_set_z(c, prob->c);
     mpf_set_z(d, prob->d);
-
-    prob_t prob_re, prob_im;
-    prob_t c_a, c_b, c_c, c_d;
 
     assert(mpz_fits_uint_p(c_k));
     mp_bitcnt_t shift_cnt = mpz_get_ui(c_k);

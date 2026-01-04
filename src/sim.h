@@ -70,7 +70,7 @@ void measure_all(unsigned long samples, FILE *output, MTBDD circ, int n, int *bi
 /**
  * Calculates the time elapsed between two timestamps in seconds
  */
-inline double get_time_el(struct timespec start, struct timespec fin)
+static inline double get_time_el(struct timespec start, struct timespec fin)
 {
     return fin.tv_sec - start.tv_sec + (fin.tv_nsec - start.tv_nsec) * 1.0e-9;
 }
