@@ -13,13 +13,29 @@ import os
 from qiskit.providers.jobstatus import JobStatus
 from qiskit.qasm3 import dumps
 import re
+from qiskit.circuit import ForLoopOp, Gate, QuantumCircuit
+import numpy as np
+
+class SYGate(Gate):
+    """
+    Single qubit SY gate.
+    """
+
+    def __init__(self, label=None):
+        super().__init__("sy", 1, [], label=label)
+
+    def _define(self):
+        qc = QuantumCircuit(1)
+        qc.ry(np.pi / 2, 0)
+        self.definition = qc
 
 class MedusaJob(JobV1):
-    def __init__(self, backend, job_id, circuit, shots, wrapper):
+    def __init__(self, backend, job_id, circuit, shots, wrapper, symbolic=0):
         super().__init__(backend, job_id)
         self.circuit = circuit
         self.shots = shots
         self._wrapper = wrapper
+        self.symbolic = symbolic
         self._result = None
 
     def submit(self):
@@ -36,8 +52,9 @@ class MedusaJob(JobV1):
             # MEDUSA doesnt support 'barrier' instructions, so we skip them during dump
             qasm_str = re.sub(r'barrier\s+[^;]*;\n?', '', qasm_str)
 
-            # also MEDUSA expects rx(pi/2) instead of sx, so we replace those
+            # also MEDUSA expects rx/y(pi/2) instead of sx/y, so we replace those
             qasm_str = re.sub(r"\bsx\b", "rx(pi/2)", qasm_str)
+            qasm_str = re.sub(r"\bsy\b", "ry(pi/2)", qasm_str)
 
             # write to temporary file
             temp_qasm.write(qasm_str)
@@ -46,10 +63,13 @@ class MedusaJob(JobV1):
 
             print("Simulating circuit:\n", qasm_str)
             # run the simulation
-            self._wrapper.simulate_qasm_file(temp_qasm.name)
+            mtbdd = self._wrapper.simulate_qasm_file(temp_qasm.name, self.symbolic)
 
             # retrieve results
-            counts = self._wrapper.get_counts(shots=self.shots, num_qubits=self.circuit.num_qubits)
+            counts = self._wrapper.get_counts(shots=self.shots, num_qubits=self.circuit.num_qubits, mtbdd=mtbdd)
+
+            # only keep non-zero counts
+            counts = {k: v for k, v in counts.items() if v > 0}
 
             # format result
             data = {
@@ -120,7 +140,7 @@ class MedusaBackend(BackendV2):
         self._wrapper = MedusaWrapper()
 
         # TODO: Define target with supported gates and properties
-        max_n_qubits = 20  # TODO: find a reasonable default or make configurable
+        max_n_qubits = 200  # TODO: find a reasonable default or make configurable
         self._target = Target(num_qubits=max_n_qubits)
 
         # {None: None} implies the gate is "ideal" (no error) and available on all qubits
@@ -135,14 +155,17 @@ class MedusaBackend(BackendV2):
         self._target.add_instruction(HGate(), properties=ideal_props)
         self._target.add_instruction(SGate(), properties=ideal_props)
         self._target.add_instruction(TGate(), properties=ideal_props)
-
         self._target.add_instruction(SXGate(), properties=ideal_props)
+        self._target.add_instruction(SYGate(), properties=ideal_props)
 
         # Multi Qubit Gates
         self._target.add_instruction(CXGate(), properties=ideal_props)
         self._target.add_instruction(CZGate(), properties=ideal_props)
         self._target.add_instruction(CCXGate(), properties=ideal_props)
-        # self._target.add_instruction(MCXGate(num_ctrl_qubits=2), properties=ideal_props)
+        self._target.add_instruction(MCXGate(num_ctrl_qubits=3), properties=ideal_props)
+
+        # Control Flow
+        self._target.add_instruction(ForLoopOp, name="for_loop")
 
         # Measurement
         self._target.add_instruction(Measure(), properties=ideal_props)
@@ -157,7 +180,7 @@ class MedusaBackend(BackendV2):
 
     @classmethod
     def _default_options(cls):
-        return Options(shots=1024)
+        return Options(shots=1024, symbolic=0)
 
     @property
     def provider(self):
@@ -177,10 +200,11 @@ class MedusaBackend(BackendV2):
 
         # get options
         shots = options.get("shots", self.options.shots)
+        symbolic = options.get("symbolic", self.options.symbolic)
 
         # create and submit the job
         job_id = str(uuid.uuid4())
-        job = MedusaJob(self, job_id, circuit, shots, self._wrapper)
+        job = MedusaJob(self, job_id, circuit, shots, self._wrapper, symbolic=symbolic)
         job.submit()
 
         return job
