@@ -27,8 +27,6 @@ if not lib_path:
     checked_paths = ", ".join(str(p) for p in search_paths)
     raise FileNotFoundError(f"Could not find {lib_filename}. Searched in:\n{checked_paths}")
 
-print(f"Loading Medusa library from: {lib_path}")
-
 lib = ctypes.CDLL(str(lib_path))
 
 # -- Type Definitions and Function Bindings --
@@ -106,11 +104,10 @@ class MedusaWrapper:
 
         return counts
 
-    def simulate_qasm_file(self, filename: str, symbolic: int = 0):
-        # ctypes requires bytes for char*, so we encode the string
+    def simulate_qasm_file(self, filename: str, symbolic: bool = False):
+        # prepare args
         b_filename = filename.encode('utf-8')
-
-        # create MTBDD and pass it to the function
+        symbolic = 1 if symbolic else 0
         mtbdd = MTBDD()
 
         # run simulation
@@ -118,5 +115,4 @@ class MedusaWrapper:
         if res != 0:
             raise RuntimeError(f"Simulation failed for file: {filename}")
 
-        print(f"Simulation successful for {filename}")
         return mtbdd
