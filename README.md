@@ -57,7 +57,7 @@ from qiskit_medusa.backend import MedusaBackend
 backend = MedusaBackend()
 
 # Enable symbolic simulation (optional)
-medusa_backend.set_options(symbolic=True)
+backend.set_options(symbolic=True)
 
 # Create a simple quantum circuit
 qc = QuantumCircuit(2)
