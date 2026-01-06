@@ -1,5 +1,5 @@
 # qiskit-medusa
-**qiskit-medusa** is a high-performance MTBDD-based quantum circuit simulator for Qiskit. It provides a Python interface to [MEDUSA](https://github.com/trolando/medusa) (**M**ulti-Terminal Binary D**E**cision **D**iagram-based Q**U**antum **S**imul**A**tor), a quantum simulator written in C that leverages the [Sylvan](https://trolando.github.io/sylvan/) library for efficient MTBDD operations.
+**qiskit-medusa** is a high-performance MTBDD-based quantum circuit simulator for Qiskit. It provides a Python interface to [MEDUSA](https://github.com/s-jobra/MEDUSA/) (**M**ulti-Terminal Binary D**E**cision **D**iagram-based Q**U**antum **S**imul**A**tor), a quantum simulator written in C that leverages the [Sylvan](https://trolando.github.io/sylvan/) library for efficient MTBDD operations.
 
 This package bridges MEDUSA with Qiskit, allowing you to simulate quantum circuits using Qiskit's high-level API while benefiting from MEDUSA's efficient symbolic simulation capabilities.
 
@@ -16,10 +16,10 @@ This package bridges MEDUSA with Qiskit, allowing you to simulate quantum circui
 ### Requirements
 
 - Python >= 3.8
-- C compiler (gcc, clang, or MSVC)
+- C/C++ compiler (gcc, clang, or MSVC)
 - CMake >= 3.15
 - GMP library (libgmp-dev on Ubuntu/Debian)
-- ninja (build system)
+- scikit-build-core >= 0.10
 
 ### Install via pip
 
@@ -56,6 +56,9 @@ from qiskit_medusa.backend import MedusaBackend
 # Initialize the Medusa backend
 backend = MedusaBackend()
 
+# Enable symbolic simulation (optional)
+medusa_backend.set_options(symbolic=1)
+
 # Create a simple quantum circuit
 qc = QuantumCircuit(2)
 qc.h(0)
@@ -73,13 +76,25 @@ counts = result.get_counts()
 print("Counts:", counts)
 ```
 
-## Dependencies
+## Runtime Dependencies
 
 - **Qiskit** >= 1.0: Quantum computing framework
 - **NumPy** >= 1.20: Numerical computing
-- **GMP**: GNU Multiple Precision Arithmetic Library
+- **GMP**: GNU Multiple Precision Arithmetic Library (system library)
 - **Sylvan**: Multi-Terminal Binary Decision Diagram library (automatically fetched during build)
 - **Lace**: Work-stealing library used by Sylvan (automatically fetched during build)
+
+## Build Dependencies
+
+- **scikit-build-core** >= 0.10: Build backend for Python extension
+- **CMake** >= 3.15: Build system
+- **GMP development headers** (libgmp-dev on Ubuntu/Debian)
+
+## Development Dependencies
+
+- **pytest**: Testing framework
+- **black**: Code formatter
+- **pylint**: Linter
 
 ## Contributing
 
