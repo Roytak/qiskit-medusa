@@ -33,8 +33,8 @@ lib = ctypes.CDLL(str(lib_path))
 
 # -- Type Definitions and Function Bindings --
 
-# struct simulator_ctx *
-SimulatorCtxPtr = c_void_p
+# define MTBDD as uint64_t
+MTBDD = ctypes.c_uint64
 
 # void medusa_init(void);
 lib.medusa_init.argtypes = []
@@ -44,16 +44,12 @@ lib.medusa_init.restype = None
 lib.medusa_destroy.argtypes = []
 lib.medusa_destroy.restype = None
 
-# simulator_ctx_t *medusa_simulator_ctx_init(void);
-lib.medusa_simulator_ctx_init.argtypes = []
-lib.medusa_simulator_ctx_init.restype = SimulatorCtxPtr
-
-# int medusa_simulate_file(simulator_ctx_t *ctx, const char *filename);
-lib.medusa_simulate_file.argtypes = [SimulatorCtxPtr, c_char_p]
+# int int medusa_simulate_file(const char *filename, int symbolic, MTBDD *mtbdd);
+lib.medusa_simulate_file.argtypes = [c_char_p, c_int, ctypes.POINTER(MTBDD)]
 lib.medusa_simulate_file.restype = c_int
 
-# int medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double **probs);
-lib.medusa_get_counts.argtypes = [SimulatorCtxPtr,
+# int medusa_get_counts(MTBDD mtbdd, int num_qubits, char **indices[], double **probs);
+lib.medusa_get_counts.argtypes = [MTBDD,
                                    c_int,
                                    ctypes.POINTER(ctypes.POINTER(ctypes.c_char_p)),
                                    ctypes.POINTER(ctypes.POINTER(ctypes.c_double))]
@@ -70,21 +66,18 @@ class MedusaWrapper:
         # initialize library
         lib.medusa_init()
 
-        # create context
-        self.ctx = lib.medusa_simulator_ctx_init()
-        if not self.ctx:
-            raise MemoryError("Failed to create simulator context")
-
     def __del__(self):
         # destroy context
         lib.medusa_destroy()
-        self.ctx = None
 
-    def get_counts(self, shots = 1024, num_qubits=None):
+    def get_counts(self, shots = 1024, num_qubits=None, mtbdd=None):
+        if mtbdd is None:
+            raise ValueError("MTBDD must be provided to get counts")
+
         indices_ptr = ctypes.POINTER(ctypes.c_char_p)()
         probs_ptr = ctypes.POINTER(ctypes.c_double)()
 
-        res = lib.medusa_get_counts(self.ctx,
+        res = lib.medusa_get_counts(mtbdd,
                                     num_qubits if num_qubits is not None else 0,
                                     ctypes.byref(indices_ptr),
                                     ctypes.byref(probs_ptr))
@@ -113,13 +106,17 @@ class MedusaWrapper:
 
         return counts
 
-    def simulate_qasm_file(self, filename: str):
+    def simulate_qasm_file(self, filename: str, symbolic: int = 0):
         # ctypes requires bytes for char*, so we encode the string
         b_filename = filename.encode('utf-8')
 
+        # create MTBDD and pass it to the function
+        mtbdd = MTBDD()
+
         # run simulation
-        res = lib.medusa_simulate_file(self.ctx, b_filename)
+        res = lib.medusa_simulate_file(b_filename, symbolic, ctypes.byref(mtbdd))
         if res != 0:
             raise RuntimeError(f"Simulation failed for file: {filename}")
 
         print(f"Simulation successful for {filename}")
+        return mtbdd

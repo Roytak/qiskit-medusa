@@ -9,12 +9,15 @@
 
 #include "medusa.h"
 #include "mtbdd.h"
+#include "sim.h"
+#include "symb_utils.h"
 
 void
 medusa_init(void)
 {
     init_sylvan();
     init_my_leaf(1);
+    init_sylvan_symb();
 }
 
 void
@@ -23,25 +26,16 @@ medusa_destroy(void)
     stop_sylvan();
 }
 
-simulator_ctx_t *
-medusa_simulator_ctx_init(void)
-{
-    simulator_ctx_t *ctx;
-
-    ctx = calloc(1, sizeof *ctx);
-    if (!ctx) {
-        fprintf(stderr, "Memory allocation failed\n");
-        return NULL;
-    }
-
-    return ctx;
-}
-
 int
-medusa_simulate_file(simulator_ctx_t *ctx, const char *filename)
+medusa_simulate_file(const char *filename, int symbolic, MTBDD *mtbdd)
 {
     int r;
     FILE *in;
+
+    if (!filename || !mtbdd) {
+        fprintf(stderr, "Invalid arguments to medusa_simulate_file\n");
+        return 1;
+    }
 
     in = fopen(filename, "r");
     if (!in) {
@@ -49,7 +43,7 @@ medusa_simulate_file(simulator_ctx_t *ctx, const char *filename)
         return 1;
     }
 
-    r = sim_file(in, ctx);
+    r = sim_file(in, symbolic, mtbdd);
 
     fclose(in);
 
@@ -119,14 +113,14 @@ medusa_get_counts_r(const MTBDD node, char **indices, double *probs,
 }
 
 int
-medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double **probs)
+medusa_get_counts(MTBDD mtbdd, int num_qubits, char **indices[], double **probs)
 {
     size_t leaf_count;
     char *path_buffer;
     size_t current_idx = 0;
     int max_depth;
 
-    if (!ctx || (num_qubits <= 0) || !indices || !probs) {
+    if ((num_qubits <= 0) || !indices || !probs) {
         return 1;
     }
 
@@ -136,7 +130,7 @@ medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double
     max_depth = num_qubits;
 
     /* get number of leaves and allocate arrays */
-    leaf_count = medusa_get_mtbdd_leaf_count_r(ctx->circuit);
+    leaf_count = medusa_get_mtbdd_leaf_count_r(mtbdd);
     if (leaf_count == 0) {
         /* empty tree */
         return 0;
@@ -158,7 +152,7 @@ medusa_get_counts(simulator_ctx_t *ctx, int num_qubits, char **indices[], double
     }
 
     /* get counts recursively */
-    if (medusa_get_counts_r(ctx->circuit, *indices, *probs, path_buffer, 0, &current_idx)) {
+    if (medusa_get_counts_r(mtbdd, *indices, *probs, path_buffer, 0, &current_idx)) {
         free(*indices);
         free(*probs);
         free(path_buffer);

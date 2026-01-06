@@ -199,7 +199,7 @@ static int skip_one_line_comments(char c, FILE *in)
     return 0;
 }
 
-bool sim_file(FILE *in, simulator_ctx_t *ctx)
+bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
 {
     int c;
     char cmd[CMD_MAX_LEN]; // initialized to 0s in the loop
@@ -212,9 +212,7 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
     mtbdd_symb_t symbc;
     uint64_t iters;
     struct timespec t_loop_start, t_loop_finish, t_eval_start;
-    MTBDD *circ = &ctx->circuit;
-    sim_flags_t *flags = &ctx->sim_flags;
-    sim_info_t *info = &ctx->sim_info;
+    sim_info_t info = {0};
 
     while ((c = fgetc(in)) != EOF) {
         for (int i=0; i < CMD_MAX_LEN; i++) {
@@ -269,13 +267,13 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
 
             uint32_t n = get_q_num(in);
             n_bits = (int)n;
-            if (info->n_qubits != 0 && n != info->n_qubits) { // != 0 check because maybe it's not initialized yet
+            if (info.n_qubits != 0 && n != info.n_qubits) { // != 0 check because maybe it's not initialized yet
                 error_exit("Bit register size is different than the size of the qubit register - currently not supported.\n");
             }
 
-            info->bits_to_measure = my_malloc(n * sizeof(int));
+            info.bits_to_measure = my_malloc(n * sizeof(int));
             for (int i=0; i < n; i++) {
-                (info->bits_to_measure)[i] =  Q_NOT_MEASURED;
+                (info.bits_to_measure)[i] =  Q_NOT_MEASURED;
             }
 
             while (isspace(c = fgetc(in))) { }
@@ -305,7 +303,7 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
             }
 
             uint32_t n = get_q_num(in);
-            info->n_qubits = (int)n;
+            info.n_qubits = (int)n;
             if (n_bits != 0 && n != n_bits) { // != 0 check because maybe it's not initialized yet
                 error_exit("Bit register size is different than the size of the qubit register - currently not supported.\n");
             }
@@ -335,8 +333,8 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                     }
                 }
                 is_loop = true;
-                if (flags->opt_symb) {
-                    if (info->n_loops == 0) {
+                if (is_symbolic) {
+                    if (info.n_loops == 0) {
                         symexp_htab_init(1LL<<17);
                     }
                     symb_init(circ, &symbc);
@@ -344,8 +342,8 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                 if (fgetpos(in, &loop_start) != 0) {
                     error_exit("Could not get the current position of the stream to mark the start of a loop.\n");
                 }
-                if (info->n_loops == info->t_len) {
-                    sim_info_times_addsize(info, TIMES_RESIZE_COEF);
+                if (info.n_loops == info.t_len) {
+                    sim_info_times_addsize(&info, TIMES_RESIZE_COEF);
                 }
                 clock_gettime(CLOCK_MONOTONIC, &t_loop_start);
                 continue; // ';' not expected
@@ -354,14 +352,14 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                 if (!is_loop) {
                     error_exit("Invalid loop syntax - reached an unexpected end of a loop.\n");
                 }
-                if (!flags->opt_symb) {
+                if (!is_symbolic) {
                     iters--;
                     if (!iters) {
                         is_loop = false;
                         clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
                         // must be here because after if-else also the not finished loops appear
-                        info->t_el_loop[info->n_loops] = get_time_el(t_loop_start, t_loop_finish);
-                        info->n_loops++;
+                        info.t_el_loop[info.n_loops] = get_time_el(t_loop_start, t_loop_finish);
+                        info.n_loops++;
                     }
                     else { // next iteration
                         if (fsetpos(in, &loop_start) != 0) {
@@ -377,9 +375,9 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                         clock_gettime(CLOCK_MONOTONIC, &t_eval_start);
                         symb_eval(circ, &symbc, iters, rdata);
                         clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
-                        info->t_el_loop[info->n_loops] = get_time_el(t_loop_start, t_loop_finish);
-                        info->t_el_eval[info->n_loops] = get_time_el(t_eval_start, t_loop_finish);
-                        info->n_loops++;
+                        info.t_el_loop[info.n_loops] = get_time_el(t_loop_start, t_loop_finish);
+                        info.t_el_eval[info.n_loops] = get_time_el(t_eval_start, t_loop_finish);
+                        info.n_loops++;
                     }
                     else {
                         if (fsetpos(in, &loop_start) != 0) {
@@ -391,7 +389,7 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                 continue; // ';' not expected
             }
             else if ((strcmp(cmd, "measure") == 0) || (strcmp(cmd, bit_reg) == 0)) {
-                if (info->bits_to_measure == NULL) {
+                if (info.bits_to_measure == NULL) {
                     error_exit("Measuring into an uninitialized bit register.\n");
                 }
                 uint32_t qt, ct;
@@ -404,45 +402,45 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                     qt = get_q_num(in);
                 }
 
-                info->is_measure = true;
-                (info->bits_to_measure)[qt] = ct;
+                info.is_measure = true;
+                (info.bits_to_measure)[qt] = ct;
             }
             else if (strcasecmp(cmd, "x") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_x(&symbc.val, qt) : gate_x(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_x(&symbc.val, qt) : gate_x(circ, qt);
             }
             else if (strcasecmp(cmd, "y") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_y(&symbc.val, qt) : gate_y(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_y(&symbc.val, qt) : gate_y(circ, qt);
             }
             else if (strcasecmp(cmd, "z") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_z(&symbc.val, qt) : gate_z(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_z(&symbc.val, qt) : gate_z(circ, qt);
             }
             else if (strcasecmp(cmd, "h") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_h(&symbc.val, qt) : gate_h(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_h(&symbc.val, qt) : gate_h(circ, qt);
             }
             else if (strcasecmp(cmd, "s") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_s(&symbc.val, qt) : gate_s(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_s(&symbc.val, qt) : gate_s(circ, qt);
             }
             else if (strcasecmp(cmd, "t") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_t(&symbc.val, qt) : gate_t(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_t(&symbc.val, qt) : gate_t(circ, qt);
             }
             else if (strcasecmp(cmd, "rx(pi/2)") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_rx_pihalf(&symbc.val, qt) : gate_rx_pihalf(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_rx_pihalf(&symbc.val, qt) : gate_rx_pihalf(circ, qt);
             }
             else if (strcasecmp(cmd, "ry(pi/2)") == 0) {
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_ry_pihalf(&symbc.val, qt) : gate_ry_pihalf(circ, qt);
+                (is_symbolic && is_loop)? gate_symb_ry_pihalf(&symbc.val, qt) : gate_ry_pihalf(circ, qt);
             }
             else if (strcasecmp(cmd, "cx") == 0) {
                 uint32_t qc = get_q_num(in);
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_cnot(&symbc.val, qt, qc) : gate_cnot(circ, qt, qc);
+                (is_symbolic && is_loop)? gate_symb_cnot(&symbc.val, qt, qc) : gate_cnot(circ, qt, qc);
             }
             else if (strcasecmp(cmd, "cz") == 0) {
                 uint32_t qc = get_q_num(in);
@@ -453,13 +451,13 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                     qc = temp;
                 }
                 assert(qc != qt);
-                (flags->opt_symb && is_loop)? gate_symb_cz(&symbc.val, qt, qc) : gate_cz(circ, qt, qc);
+                (is_symbolic && is_loop)? gate_symb_cz(&symbc.val, qt, qc) : gate_cz(circ, qt, qc);
             }
             else if (strcasecmp(cmd, "ccx") == 0) {
                 uint32_t qc1 = get_q_num(in);
                 uint32_t qc2 = get_q_num(in);
                 uint32_t qt = get_q_num(in);
-                (flags->opt_symb && is_loop)? gate_symb_toffoli(&symbc.val, qt, qc1, qc2) : gate_toffoli(circ, qt, qc1, qc2);
+                (is_symbolic && is_loop)? gate_symb_toffoli(&symbc.val, qt, qc1, qc2) : gate_toffoli(circ, qt, qc1, qc2);
             }
             else if (strcasecmp(cmd, "mcx") == 0) { // supports 2 and 3 control qubits
                 qparam_list_t* qparams = qparam_list_create();
@@ -483,7 +481,7 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
                     }
                 }
 
-                (flags->opt_symb && is_loop)? gate_symb_mcx(&symbc.val, qparams) : gate_mcx(circ, qparams);
+                (is_symbolic && is_loop)? gate_symb_mcx(&symbc.val, qparams) : gate_mcx(circ, qparams);
 
                 qparam_list_del(qparams);
                 continue; // ';' already encountered
@@ -504,7 +502,7 @@ bool sim_file(FILE *in, simulator_ctx_t *ctx)
         }
     } // while
 
-    if (flags->opt_symb && info->n_loops > 0) {
+    if (is_symbolic && info.n_loops > 0) {
         symexp_htab_clear();
     }
     return init;

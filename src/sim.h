@@ -10,9 +10,6 @@
 #include <time.h>
 #include "mtbdd.h"
 
-// Forward declaration to avoid circular dependency
-typedef struct simulator_ctx simulator_ctx_t;
-
 /// Flags to run the simulation with
 typedef struct sim_flags {
     bool opt_symb;   /// If true, loops will be simulated symbolically
@@ -40,16 +37,14 @@ void init_sim_info(sim_info_t *i);
  *
  * @param in input QASM file
  *
- * @param circ MTBDD that will represent the final quantum state
+ * @param is_symbolic If true, loops will be simulated symbolically
  *
- * @param flags Flags to run the simulation with
- *
- * @param info Structure to store the simulation info to (needs to be initialized beforehand)
+ * @param circ Pointer to MTBDD where the resulting circuit will be stored
  *
  * @return true if the circuit has been properly initialized and simulated
  *
  */
-bool sim_file(FILE *in, simulator_ctx_t *ctx);
+bool sim_file(FILE *in, int is_symbolic, MTBDD *circ);
 
 /**
  * Measures all bits in the given array (compatible only with measurement at the end of the circuit)
