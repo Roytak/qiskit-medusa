@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include "mtbdd.h"
+#include "circuit_ir.h"
 
 /// Flags to run the simulation with
 typedef struct sim_flags {
@@ -33,16 +34,35 @@ typedef struct sim_info {
 void init_sim_info(sim_info_t *i);
 
 /**
- * Parses a given QASM file and simulates this circuit
+ * Parses a QASM file into a circuit intermediate representation.
  *
  * @param in input QASM file
  *
- * @param is_symbolic If true, loops will be simulated symbolically
+ * @return A newly allocated circuit IR, or NULL on parse failure.
+ *         The caller is responsible for calling circuit_ir_destroy().
+ */
+circuit_ir_t *parse_qasm(FILE *in);
+
+/**
+ * Simulates a parsed circuit IR on an MTBDD backend.
  *
+ * @param ir          The parsed circuit (must not be NULL)
+ * @param is_symbolic If true, loops will be simulated symbolically
+ * @param circ        Pointer to MTBDD where the resulting circuit will be stored
+ *
+ * @return true if the circuit has been properly simulated
+ */
+bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ);
+
+/**
+ * Convenience wrapper: parses a QASM file and simulates it in one call.
+ * Equivalent to parse_qasm() followed by simulate_ir().
+ *
+ * @param in input QASM file
+ * @param is_symbolic If true, loops will be simulated symbolically
  * @param circ Pointer to MTBDD where the resulting circuit will be stored
  *
  * @return true if the circuit has been properly initialized and simulated
- *
  */
 bool sim_file(FILE *in, int is_symbolic, MTBDD *circ);
 

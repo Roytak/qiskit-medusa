@@ -2,7 +2,9 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <assert.h>
 #include "sim.h"
+#include "circuit_ir.h"
 #include "gates.h"
 #include "gates_symb.h"
 #include "mtbdd_symb_val.h"
@@ -55,6 +57,10 @@ static void sim_info_times_addsize(sim_info_t *i, int inc)
     }
     i->t_len = size;
 }
+
+/* ================================================================== */
+/*  QASM Parsing Helpers                                               */
+/* ================================================================== */
 
 /**
  * Function for number parsing from the input file (reads the number from the input until the end character is encountered)
@@ -138,7 +144,6 @@ static uint64_t get_iters(FILE *in)
     int c;
     long long start, end;
     long long step = 1;
-    fpos_t second_num_pos;
     uint64_t iters;
 
     while ((c = fgetc(in)) != '[') {
@@ -199,23 +204,26 @@ static int skip_one_line_comments(char c, FILE *in)
     return 0;
 }
 
-bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
+/* ================================================================== */
+/*  parse_qasm  –  QASM file  →  circuit_ir_t                         */
+/* ================================================================== */
+
+circuit_ir_t *parse_qasm(FILE *in)
 {
     int c;
-    char cmd[CMD_MAX_LEN]; // initialized to 0s in the loop
+    char cmd[CMD_MAX_LEN];
     char bit_reg[BIT_REG_ID_MAX_LEN] = {0};
     bool init = false;
-    int n_bits = 0;
 
-    bool is_loop = false;
-    fpos_t loop_start;
-    mtbdd_symb_t symbc;
-    uint64_t iters;
-    struct timespec t_loop_start, t_loop_finish, t_eval_start;
-    sim_info_t info = {0};
+    /* Index of the current (only) LOOP_START – used to patch LOOP_END.
+     * Nested loops are not supported. */
+    size_t loop_start_idx = 0;
+    bool in_loop = false;
+
+    circuit_ir_t *ir = circuit_ir_create();
 
     while ((c = fgetc(in)) != EOF) {
-        for (int i=0; i < CMD_MAX_LEN; i++) {
+        for (int i = 0; i < CMD_MAX_LEN; i++) {
             cmd[i] = '\0';
         }
 
@@ -227,7 +235,7 @@ bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
             break;
         }
 
-        // Skip one-line comments
+        /* Skip one-line comments */
         int comment_check = skip_one_line_comments(c, in);
         if (comment_check == -1) {
             break;
@@ -236,65 +244,66 @@ bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
             continue;
         }
 
-        // Load the command
+        /* Load the command */
         do {
             if (c == EOF) {
                 error_exit("Invalid format - reached an unexpected end of file when loading a command.\n");
             }
             int len = strlen(cmd);
             if (len + 1 < CMD_MAX_LEN) {
-                cmd[len] = (char) c;
+                cmd[len] = (char)c;
             }
             else {
                 error_exit("Invalid command (command too long).\n");
             }
         } while (!isspace(c = fgetc(in)) && (c != '['));
+
         if (c == '[') {
-            // get_q_num() needs to see '[' (needed because of OpenQASM 3 new syntax)
             ungetc(c, in);
         }
         else if (c == EOF) {
             error_exit("Invalid format - reached an unexpected end of file immediately after a command.\n");
         }
 
-        // Identify the command
-        if (strcmp(cmd, "OPENQASM") == 0) {}
-        else if (strcmp(cmd, "include") == 0) {}
+        /* ---- Identify the command and populate the IR ---- */
+
+        if (strcmp(cmd, "OPENQASM") == 0) {
+            /* ignored – skip rest of line */
+        }
+        else if (strcmp(cmd, "include") == 0) {
+            /* ignored – skip rest of line */
+        }
         else if ((strcmp(cmd, "creg") == 0) || (strcmp(cmd, "bit") == 0)) {
-            if (n_bits != 0) {
+            if (ir->n_bits != 0) {
                 error_exit("Multiple bit register definitions encountered - currently not supported.\n");
             }
 
             uint32_t n = get_q_num(in);
-            n_bits = (int)n;
-            if (info.n_qubits != 0 && n != info.n_qubits) { // != 0 check because maybe it's not initialized yet
+            circuit_ir_set_bits(ir, n);
+
+            if (ir->n_qubits != 0 && n != ir->n_qubits) {
                 error_exit("Bit register size is different than the size of the qubit register - currently not supported.\n");
             }
 
-            info.bits_to_measure = my_malloc(n * sizeof(int));
-            for (int i=0; i < n; i++) {
-                (info.bits_to_measure)[i] =  Q_NOT_MEASURED;
-            }
-
             while (isspace(c = fgetc(in))) { }
-            // Save the register name to detect measurements
+            /* Save the register name to detect measurements */
             do {
                 if (c == ';') {
-                    break; // continue needs to be outside of the loop
+                    break;
                 }
                 else if (c == EOF) {
                     error_exit("Invalid format - reached an unexpected end of file (bit register name expected).\n");
                 }
                 int len = strlen(bit_reg);
                 if (len + 1 < BIT_REG_ID_MAX_LEN) {
-                    bit_reg[len] = (char) c;
+                    bit_reg[len] = (char)c;
                 }
                 else {
-                    error_exit("Invalid bit register identifier (identifier is too long, max supported length is %d).\n", BIT_REG_ID_MAX_LEN-1);
+                    error_exit("Invalid bit register identifier (identifier is too long, max supported length is %d).\n", BIT_REG_ID_MAX_LEN - 1);
                 }
             } while (!isspace(c = fgetc(in)));
             if (c == ';') {
-                continue; // end of command
+                continue; /* end of command */
             }
         }
         else if ((strcmp(cmd, "qreg") == 0) || (strcmp(cmd, "qubit") == 0)) {
@@ -303,23 +312,22 @@ bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
             }
 
             uint32_t n = get_q_num(in);
-            info.n_qubits = (int)n;
-            if (n_bits != 0 && n != n_bits) { // != 0 check because maybe it's not initialized yet
+            circuit_ir_set_qubits(ir, n);
+
+            if (ir->n_bits != 0 && n != (uint32_t)ir->n_bits) {
                 error_exit("Bit register size is different than the size of the qubit register - currently not supported.\n");
             }
-
-            circuit_init(circ, n);
-            mtbdd_protect(circ);
             init = true;
         }
         else if (init) {
+            /* ---- Loop control ---- */
             if (strcmp(cmd, "for") == 0) {
-                if (is_loop) { // currently doesn't allow nested loops
+                if (in_loop) {
                     error_exit("Nested loops are not allowed, aborting.\n");
                 }
-                iters = get_iters(in);
+                uint64_t iters = get_iters(in);
                 if (iters == 0) {
-                    // skip symbolic
+                    /* Skip the loop body in the file */
                     while ((c = fgetc(in)) != '}') {
                         if (c == EOF || skip_one_line_comments(c, in) == -1) {
                             error_exit("Invalid format - reached an unexpected end of file (there is an unfinished loop).\n");
@@ -332,68 +340,25 @@ bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
                         error_exit("Invalid format - reached an unexpected end of file at the start of a loop.\n");
                     }
                 }
-                is_loop = true;
-                if (is_symbolic) {
-                    if (info.n_loops == 0) {
-                        symexp_htab_init(1LL<<17);
-                    }
-                    symb_init(circ, &symbc);
-                }
-                if (fgetpos(in, &loop_start) != 0) {
-                    error_exit("Could not get the current position of the stream to mark the start of a loop.\n");
-                }
-                if (info.n_loops == info.t_len) {
-                    sim_info_times_addsize(&info, TIMES_RESIZE_COEF);
-                }
-                clock_gettime(CLOCK_MONOTONIC, &t_loop_start);
-                continue; // ';' not expected
+                loop_start_idx = circuit_ir_add_loop_start(ir, iters);
+                in_loop = true;
+                continue; /* ';' not expected */
             }
             else if (strcmp(cmd, "}") == 0) {
-                if (!is_loop) {
+                if (!in_loop) {
                     error_exit("Invalid loop syntax - reached an unexpected end of a loop.\n");
                 }
-                if (!is_symbolic) {
-                    iters--;
-                    if (!iters) {
-                        is_loop = false;
-                        clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
-                        // must be here because after if-else also the not finished loops appear
-                        info.t_el_loop[info.n_loops] = get_time_el(t_loop_start, t_loop_finish);
-                        info.n_loops++;
-                    }
-                    else { // next iteration
-                        if (fsetpos(in, &loop_start) != 0) {
-                            error_exit("Could not set a new position of the stream to start the next iteration.\n");
-                        }
-                    }
-                }
-                else {
-                    rdata_t *rdata = rdata_create(symbc.vm); // vm will be directly updated during refine
-                    if (symb_refine(&symbc, rdata)) {
-                        // is final result
-                        is_loop = false;
-                        clock_gettime(CLOCK_MONOTONIC, &t_eval_start);
-                        symb_eval(circ, &symbc, iters, rdata);
-                        clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
-                        info.t_el_loop[info.n_loops] = get_time_el(t_loop_start, t_loop_finish);
-                        info.t_el_eval[info.n_loops] = get_time_el(t_eval_start, t_loop_finish);
-                        info.n_loops++;
-                    }
-                    else {
-                        if (fsetpos(in, &loop_start) != 0) {
-                            error_exit("Could not set a new position of the stream during symbolic simulation.\n");
-                        }
-                    }
-                    rdata_delete(rdata);
-                }
-                continue; // ';' not expected
+                circuit_ir_add_loop_end(ir, loop_start_idx);
+                in_loop = false;
+                continue; /* ';' not expected */
             }
+            /* ---- Measurement ---- */
             else if ((strcmp(cmd, "measure") == 0) || (strcmp(cmd, bit_reg) == 0)) {
-                if (info.bits_to_measure == NULL) {
+                if (ir->bits_to_measure == NULL) {
                     error_exit("Measuring into an uninitialized bit register.\n");
                 }
                 uint32_t qt, ct;
-                if ((strcmp(cmd, "measure") == 0)) {
+                if (strcmp(cmd, "measure") == 0) {
                     qt = get_q_num(in);
                     ct = get_q_num(in);
                 }
@@ -401,90 +366,93 @@ bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
                     ct = get_q_num(in);
                     qt = get_q_num(in);
                 }
-
-                info.is_measure = true;
-                (info.bits_to_measure)[qt] = ct;
+                circuit_ir_add_measure(ir, qt, ct);
             }
+            /* ---- Single-qubit gates ---- */
             else if (strcasecmp(cmd, "x") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_x(&symbc.val, qt) : gate_x(circ, qt);
+                circuit_ir_add_x(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "y") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_y(&symbc.val, qt) : gate_y(circ, qt);
+                circuit_ir_add_y(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "z") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_z(&symbc.val, qt) : gate_z(circ, qt);
+                circuit_ir_add_z(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "h") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_h(&symbc.val, qt) : gate_h(circ, qt);
+                circuit_ir_add_h(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "s") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_s(&symbc.val, qt) : gate_s(circ, qt);
+                circuit_ir_add_s(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "t") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_t(&symbc.val, qt) : gate_t(circ, qt);
+                circuit_ir_add_t(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "rx(pi/2)") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_rx_pihalf(&symbc.val, qt) : gate_rx_pihalf(circ, qt);
+                circuit_ir_add_rx_pihalf(ir, get_q_num(in));
             }
             else if (strcasecmp(cmd, "ry(pi/2)") == 0) {
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_ry_pihalf(&symbc.val, qt) : gate_ry_pihalf(circ, qt);
+                circuit_ir_add_ry_pihalf(ir, get_q_num(in));
             }
+            /* ---- Two-qubit gates ---- */
             else if (strcasecmp(cmd, "cx") == 0) {
                 uint32_t qc = get_q_num(in);
                 uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_cnot(&symbc.val, qt, qc) : gate_cnot(circ, qt, qc);
+                circuit_ir_add_cx(ir, qc, qt);
             }
             else if (strcasecmp(cmd, "cz") == 0) {
                 uint32_t qc = get_q_num(in);
                 uint32_t qt = get_q_num(in);
-                if (qc > qt) { // can swap as it is only a controlled rotation
+                if (qc > qt) {
                     uint32_t temp = qt;
                     qt = qc;
                     qc = temp;
                 }
                 assert(qc != qt);
-                (is_symbolic && is_loop)? gate_symb_cz(&symbc.val, qt, qc) : gate_cz(circ, qt, qc);
+                circuit_ir_add_cz(ir, qc, qt);
             }
+            /* ---- Three-qubit gates ---- */
             else if (strcasecmp(cmd, "ccx") == 0) {
                 uint32_t qc1 = get_q_num(in);
                 uint32_t qc2 = get_q_num(in);
-                uint32_t qt = get_q_num(in);
-                (is_symbolic && is_loop)? gate_symb_toffoli(&symbc.val, qt, qc1, qc2) : gate_toffoli(circ, qt, qc1, qc2);
+                uint32_t qt  = get_q_num(in);
+                circuit_ir_add_ccx(ir, qc1, qc2, qt);
             }
-            else if (strcasecmp(cmd, "mcx") == 0) { // supports 2 and 3 control qubits
-                qparam_list_t* qparams = qparam_list_create();
+            /* ---- Multi-qubit gates ---- */
+            else if (strcasecmp(cmd, "mcx") == 0) {
+                /* Collect all qubit indices (target + controls) */
+                uint32_t buf[64];
+                uint32_t count = 0;
 
-                // Read all control qubits and the target qubit and save it in qparams
-                while(true) {
-                    qparam_list_insert_first(qparams, get_q_num(in));
+                while (true) {
+                    if (count >= 64) {
+                        error_exit("MCX gate with too many qubits (max 64).\n");
+                    }
+                    buf[count++] = get_q_num(in);
                     c = fgetc(in);
                     while (isspace(c)) {
                         c = fgetc(in);
                     }
-
                     if (c == ',') {
-                        continue; // additional qubit indices are present in the file
+                        continue;
                     }
                     else if (c == ';') {
-                        break; // all qubit parameters loaded
+                        break;
                     }
                     else {
                         error_exit("Invalid 'mcx' gate syntax.\n");
                     }
                 }
 
-                (is_symbolic && is_loop)? gate_symb_mcx(&symbc.val, qparams) : gate_mcx(circ, qparams);
-
-                qparam_list_del(qparams);
-                continue; // ';' already encountered
+                /* The file lists qubits as: ctrl1, ctrl2, ..., target
+                 * but qparam_list_insert_first reverses them, so the IR
+                 * stores them in reversed order: [target, ..., ctrl2, ctrl1].
+                 * Replicate that convention. */
+                uint32_t *qubits = my_malloc(count * sizeof(uint32_t));
+                for (uint32_t i = 0; i < count; i++) {
+                    qubits[i] = buf[count - 1 - i];
+                }
+                circuit_ir_add_mcx(ir, qubits, count);
+                continue; /* ';' already consumed */
             }
             else {
                 error_exit("Invalid command '%s'.\n", cmd);
@@ -494,18 +462,228 @@ bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
             error_exit("Circuit not initialized.\n");
         }
 
-        // Skip all remaining characters on the currently read line
+        /* Skip all remaining characters on the currently read line */
         while ((c = fgetc(in)) != ';') {
             if (c == EOF) {
                 error_exit("Invalid format - reached an unexpected end of file (expected ';' to end the current line).\n");
             }
         }
-    } // while
+    } /* while */
+
+    if (!init) {
+        circuit_ir_destroy(ir);
+        return NULL;
+    }
+
+    return ir;
+}
+
+/* ================================================================== */
+/*  simulate_ir  –  circuit_ir_t  →  MTBDD simulation                  */
+/* ================================================================== */
+
+/**
+ * Dispatch a single gate instruction on the MTBDD.
+ *
+ * When `use_symb` is true the symbolic variant of the gate is called instead
+ * (used for instructions inside a symbolically simulated loop body).
+ */
+static void dispatch_gate(const gate_instr_t *instr, bool use_symb,
+                          MTBDD *circ, MTBDD *symb_val)
+{
+    switch (instr->kind) {
+    /* -- single-qubit -------------------------------------------- */
+    case GATE_X:
+        use_symb ? gate_symb_x(symb_val, instr->p.single.qt)
+                 : gate_x(circ, instr->p.single.qt);
+        break;
+    case GATE_Y:
+        use_symb ? gate_symb_y(symb_val, instr->p.single.qt)
+                 : gate_y(circ, instr->p.single.qt);
+        break;
+    case GATE_Z:
+        use_symb ? gate_symb_z(symb_val, instr->p.single.qt)
+                 : gate_z(circ, instr->p.single.qt);
+        break;
+    case GATE_H:
+        use_symb ? gate_symb_h(symb_val, instr->p.single.qt)
+                 : gate_h(circ, instr->p.single.qt);
+        break;
+    case GATE_S:
+        use_symb ? gate_symb_s(symb_val, instr->p.single.qt)
+                 : gate_s(circ, instr->p.single.qt);
+        break;
+    case GATE_T:
+        use_symb ? gate_symb_t(symb_val, instr->p.single.qt)
+                 : gate_t(circ, instr->p.single.qt);
+        break;
+    case GATE_RX_PIHALF:
+        use_symb ? gate_symb_rx_pihalf(symb_val, instr->p.single.qt)
+                 : gate_rx_pihalf(circ, instr->p.single.qt);
+        break;
+    case GATE_RY_PIHALF:
+        use_symb ? gate_symb_ry_pihalf(symb_val, instr->p.single.qt)
+                 : gate_ry_pihalf(circ, instr->p.single.qt);
+        break;
+
+    /* -- two-qubit ----------------------------------------------- */
+    case GATE_CX:
+        use_symb ? gate_symb_cnot(symb_val, instr->p.controlled.qt, instr->p.controlled.qc)
+                 : gate_cnot(circ, instr->p.controlled.qt, instr->p.controlled.qc);
+        break;
+    case GATE_CZ:
+        use_symb ? gate_symb_cz(symb_val, instr->p.controlled.qt, instr->p.controlled.qc)
+                 : gate_cz(circ, instr->p.controlled.qt, instr->p.controlled.qc);
+        break;
+
+    /* -- three-qubit --------------------------------------------- */
+    case GATE_CCX:
+        use_symb ? gate_symb_toffoli(symb_val, instr->p.toffoli.qt, instr->p.toffoli.qc1, instr->p.toffoli.qc2)
+                 : gate_toffoli(circ, instr->p.toffoli.qt, instr->p.toffoli.qc1, instr->p.toffoli.qc2);
+        break;
+
+    /* -- multi-qubit --------------------------------------------- */
+    case GATE_MCX: {
+        /* Rebuild a qparam_list from the stored qubit array.
+         * The array is [target, ctrl1, ctrl2, ...] matching the reversed
+         * insert_first order of the original code. */
+        qparam_list_t *qp = qparam_list_create();
+        /* Insert in forward order so the list ends up with first = last inserted = qubits[n-1] */
+        for (uint32_t i = 0; i < instr->p.multi.n_qubits; i++) {
+            qparam_list_insert_first(qp, instr->p.multi.qubits[i]);
+        }
+        use_symb ? gate_symb_mcx(symb_val, qp) : gate_mcx(circ, qp);
+        qparam_list_del(qp);
+        break;
+    }
+
+    /* -- these are handled by the loop/measure logic, not here --- */
+    case GATE_MEASURE:
+    case GATE_LOOP_START:
+    case GATE_LOOP_END:
+        break;
+    }
+}
+
+bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
+{
+    if (!ir || ir->n_qubits == 0) {
+        return false;
+    }
+
+    /* Initialise the MTBDD circuit state */
+    circuit_init(circ, ir->n_qubits);
+    mtbdd_protect(circ);
+
+    /* Simulation bookkeeping (timing, loop count) */
+    sim_info_t info = {0};
+    info.n_qubits = (int)ir->n_qubits;
+    struct timespec t_loop_start, t_loop_finish, t_eval_start;
+
+    /* Walk the instruction list */
+    size_t pc = 0;
+    while (pc < ir->len) {
+        const gate_instr_t *instr = &ir->instrs[pc];
+
+        switch (instr->kind) {
+
+        /* ---- Loop start ---------------------------------------- */
+        case GATE_LOOP_START: {
+            uint64_t iters = instr->p.loop_start.iters;
+            size_t body_start = pc + 1;
+            size_t body_end   = instr->p.loop_start.body_end; /* index of GATE_LOOP_END */
+
+            if (info.n_loops == info.t_len) {
+                sim_info_times_addsize(&info, TIMES_RESIZE_COEF);
+            }
+            clock_gettime(CLOCK_MONOTONIC, &t_loop_start);
+
+            if (!is_symbolic) {
+                /* --- Non-symbolic: iterate the loop body N times --- */
+                for (uint64_t it = 0; it < iters; it++) {
+                    for (size_t j = body_start; j < body_end; j++) {
+                        dispatch_gate(&ir->instrs[j], false, circ, NULL);
+                    }
+                }
+                clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
+                info.t_el_loop[info.n_loops] = get_time_el(t_loop_start, t_loop_finish);
+                info.n_loops++;
+            }
+            else {
+                /* --- Symbolic: refine until convergence ---------- */
+                if (info.n_loops == 0) {
+                    symexp_htab_init(1LL << 17);
+                }
+                mtbdd_symb_t symbc;
+                symb_init(circ, &symbc);
+
+                bool converged = false;
+                while (!converged) {
+                    /* Execute one symbolic iteration */
+                    for (size_t j = body_start; j < body_end; j++) {
+                        dispatch_gate(&ir->instrs[j], true, circ, &symbc.val);
+                    }
+
+                    rdata_t *rdata = rdata_create(symbc.vm);
+                    if (symb_refine(&symbc, rdata)) {
+                        converged = true;
+                        clock_gettime(CLOCK_MONOTONIC, &t_eval_start);
+                        symb_eval(circ, &symbc, iters, rdata);
+                        clock_gettime(CLOCK_MONOTONIC, &t_loop_finish);
+                        info.t_el_loop[info.n_loops] = get_time_el(t_loop_start, t_loop_finish);
+                        info.t_el_eval[info.n_loops] = get_time_el(t_eval_start, t_loop_finish);
+                        info.n_loops++;
+                    }
+                    rdata_delete(rdata);
+                }
+            }
+
+            /* Skip past the loop body – continue after GATE_LOOP_END */
+            pc = body_end + 1;
+            continue; /* don't fall through to pc++ */
+        }
+
+        /* ---- Loop end (should only be reached via loop start) -- */
+        case GATE_LOOP_END:
+            /* Reached only if something is wrong; loops jump past this. */
+            error_exit("Unexpected GATE_LOOP_END at instruction %zu.\n", pc);
+            break;
+
+        /* ---- Measurement (just recorded in the IR, nothing to execute) ---- */
+        case GATE_MEASURE:
+            /* Measurement is deferred to measure_all() after simulation. */
+            break;
+
+        /* ---- All regular gates --------------------------------- */
+        default:
+            dispatch_gate(instr, false, circ, NULL);
+            break;
+        }
+
+        pc++;
+    }
 
     if (is_symbolic && info.n_loops > 0) {
         symexp_htab_clear();
     }
-    return init;
+
+    return true;
+}
+
+/* ================================================================== */
+/*  sim_file  –  convenience wrapper (parse + simulate)                */
+/* ================================================================== */
+
+bool sim_file(FILE *in, int is_symbolic, MTBDD *circ)
+{
+    circuit_ir_t *ir = parse_qasm(in);
+    if (!ir) {
+        return false;
+    }
+
+    bool ok = simulate_ir(ir, is_symbolic, circ);
+    circuit_ir_destroy(ir);
+    return ok;
 }
 
 void measure_all(unsigned long samples, FILE *output, MTBDD circ, int n, int *bits_to_measure)

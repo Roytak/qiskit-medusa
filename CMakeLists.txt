@@ -17,6 +17,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # sources
 set(libsrc
+    src/circuit_ir.c
     src/error.c
     src/gates_symb.c
     src/gates.c
@@ -39,6 +40,9 @@ set(headers
 
 # create the target library
 add_library(medusa SHARED ${libsrc} ${headers})
+
+# compile with debug symbols and optimization
+target_compile_options(medusa PRIVATE -g -O2)
 
 # include directories
 target_include_directories(medusa PRIVATE src)
