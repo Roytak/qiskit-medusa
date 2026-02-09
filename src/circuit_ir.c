@@ -60,6 +60,8 @@ void circuit_ir_destroy(circuit_ir_t *ir)
     for (size_t i = 0; i < ir->len; i++) {
         if (ir->instrs[i].kind == GATE_MCX) {
             free(ir->instrs[i].p.multi.qubits);
+        } else if (ir->instrs[i].kind == GATE_ASSERT_EQ) {
+            free(ir->instrs[i].p.assert.state_str);
         }
     }
     free(ir->instrs);
@@ -143,6 +145,20 @@ void circuit_ir_add_measure(circuit_ir_t *ir, uint32_t qt, uint32_t ct)
     if (ir->bits_to_measure) {
         ir->bits_to_measure[qt] = (int)ct;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Assertions                                                        */
+/* ------------------------------------------------------------------ */
+
+void
+circuit_ir_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshold)
+{
+    gate_instr_t instr = {
+        .kind = GATE_ASSERT_EQ,
+        .p.assert = { .prob = prob_threshold, .state_str = state_str }
+    };
+    push_instr(ir, instr);
 }
 
 /* ------------------------------------------------------------------ */

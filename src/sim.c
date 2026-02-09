@@ -115,6 +115,87 @@ static long long parse_num(FILE *in, char end, char alt_end)
 }
 
 /**
+ * Function for parsing a double number from the input file (reads the number from the input until the end character is encountered)
+ */
+static double
+parse_double(FILE *in, char end)
+{
+    int c = fgetc(in);
+    char num[NUM_MAX_LEN] = {0};
+    double n;
+
+    // Skip leading whitespace
+    while (isspace(c)) {
+        c = fgetc(in);
+    }
+
+    // Load number to string
+    while (c != end) {
+        if (c == EOF) {
+            error_exit("Invalid format - reached an unexpected end of file when converting a number.\n");
+        }
+        else if (!isdigit(c) && c != '-' && c != '.' && c != 'e' && c != 'E') {
+            // Check if isn't just trailing whitespace
+            while (isspace(c)) {
+                c = fgetc(in);
+            }
+            if (c == end) {
+                break;
+            }
+            else {
+                error_exit("Invalid format - not a valid number (a non-digit character '%c' encountered while parsing a number).\n", c);
+            }
+        }
+        else if (strlen(num) + 1 < NUM_MAX_LEN) {
+            int *temp = &c;
+            strncat(num, (char*)temp, 1);
+        }
+        else {
+            error_exit("Invalid format - not a valid number (too many digits).\n");
+        }
+        c = fgetc(in);
+    }
+
+    // Convert to double value
+    char *ptr;
+    errno = 0;
+    n = strtod(num, &ptr);
+    if (num == ptr || errno != 0) {
+        error_exit("Invalid format - not a valid number.\n");
+    }
+    return n;
+}
+
+static char *
+parse_str(FILE *in, char end)
+{
+    int c = fgetc(in);
+    char str[CMD_MAX_LEN] = {0};
+
+    // Skip leading whitespace
+    while (isspace(c)) {
+        c = fgetc(in);
+    }
+
+    // Load string
+    while (c != end) {
+        if (c == EOF) {
+            error_exit("Invalid format - reached an unexpected end of file when converting a string.\n");
+        }
+        else if (strlen(str) + 1 < CMD_MAX_LEN) {
+            int *temp = &c;
+            strncat(str, (char*)temp, 1);
+        }
+        else {
+            error_exit("Invalid format - not a valid string (too long).\n");
+        }
+        c = fgetc(in);
+    }
+
+    return strdup(str);
+}
+
+/**
  * Function for getting the next qubit index for the command on the given line.
  */
 static uint32_t get_q_num(FILE *in)
@@ -368,6 +449,35 @@ circuit_ir_t *parse_qasm(FILE *in)
                 }
                 circuit_ir_add_measure(ir, qt, ct);
             }
+            /* ---- Assertions ---- */
+            else if (strcmp(cmd, "assert-eq") == 0) {
+                /* parse expected format: assert-eq p, {b0, b1, ..., bn}
+                 * where p is the probability threshold and b0, b1, ..., bn is the expected state string */
+                double prob = parse_double(in, ',');
+                char *qubit_reg_name = parse_str(in, '{');
+                char *state_str = malloc(sizeof(char) * (ir->n_qubits + 1));
+                if (!state_str) {
+                    error_exit("Memory allocation error.\n");
+                }
+
+                /* parse the state string */
+                for (uint32_t i = 0; i < ir->n_qubits; i++) {
+                    int qubit_val = parse_num(in, ',', '}');
+                    if (qubit_val != 0 && qubit_val != 1) {
+                        error_exit("Invalid format - not a valid state string (expected only '0' and '1' characters).\n");
+                    }
+                    state_str[i] = (char)(qubit_val + '0');
+                }
+                state_str[ir->n_qubits] = '\0';
+
+                circuit_ir_add_assert_eq(ir, state_str, prob);
+            }
+            else if (strcmp(cmd, "assert-sup") == 0) {
+
+            }
+            else if (strcmp(cmd, "assert-ent") == 0) {
+
+            }
             /* ---- Single-qubit gates ---- */
             else if (strcasecmp(cmd, "x") == 0) {
                 circuit_ir_add_x(ir, get_q_num(in));
@@ -478,6 +588,32 @@ circuit_ir_t *parse_qasm(FILE *in)
     return ir;
 }
 
+static void
+assert_equal(const char *expected_state, double prob_threshold, MTBDD *circ)
+{
+    cnum *value;
+    double prob;
+    MTBDD node = *circ;
+
+    for (int i = 0; i < strlen(expected_state); i++) {
+        if (expected_state[i] == '0') {
+            /* go low */
+            node = mtbdd_getlow(node);
+        } else {
+            /* go high */
+            node = mtbdd_gethigh(node);
+        }
+    }
+
+    value = (cnum *)mtbdd_getvalue(node);
+    prob = calculate_prob(value);
+
+    if (fabs(prob - prob_threshold) > EPSILON) {
+        error_exit("Assertion failed: expected probability of state |%s> is %f, but got %f\n",
+                expected_state, prob_threshold, prob);
+    }
+}
+
 /* ================================================================== */
 /*  simulate_ir  –  circuit_ir_t  →  MTBDD simulation                  */
 /* ================================================================== */
@@ -557,10 +693,11 @@ static void dispatch_gate(const gate_instr_t *instr, bool use_symb,
         break;
     }
 
-    /* -- these are handled by the loop/measure logic, not here --- */
+    /* -- these are handled by the loop/measure/assert logic, not here --- */
     case GATE_MEASURE:
     case GATE_LOOP_START:
     case GATE_LOOP_END:
+    case GATE_ASSERT_EQ:
         break;
     }
 }
@@ -652,6 +789,11 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
         /* ---- Measurement (just recorded in the IR, nothing to execute) ---- */
         case GATE_MEASURE:
             /* Measurement is deferred to measure_all() after simulation. */
+            break;
+
+        /* ---- Assertions --------------------------------- */
+        case GATE_ASSERT_EQ:
+            assert_equal(instr->p.assert.state_str, instr->p.assert.prob, circ);
             break;
 
         /* ---- All regular gates --------------------------------- */

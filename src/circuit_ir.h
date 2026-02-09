@@ -43,6 +43,11 @@ typedef enum {
     /* Measurement */
     GATE_MEASURE,
 
+    /* Assertions */
+    GATE_ASSERT_EQ,
+    GATE_ASSERT_SUP,
+    GATE_ASSERT_ENT,
+
     /* Loop control */
     GATE_LOOP_START,
     GATE_LOOP_END,
@@ -86,6 +91,14 @@ typedef struct gate_instr {
             uint32_t qt;          ///< qubit to measure
             uint32_t ct;          ///< classical bit index
         } measure;
+
+        /** Assertions */
+        struct {
+            uint32_t *qubits;     ///< array of qubits involved in the superposition or entanglement assertion
+            uint32_t  n_qubits;   ///< number of qubits in the assertion
+            double prob;          ///< probability threshold for the assertion
+            char *state_str;      ///< expected state string for probability assertions
+        } assert;
 
         /** Loop start (for … { ) */
         struct {
@@ -171,6 +184,12 @@ void circuit_ir_add_mcx(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
  * Adds a measure instruction (qubit qt → classical bit ct).
  */
 void circuit_ir_add_measure(circuit_ir_t *ir, uint32_t qt, uint32_t ct);
+
+/**
+ * Adds an assertion that the probability of the state specified by `state_str`
+ * for the qubits in `qubits` is equal to `prob` (within a threshold defined in sim.c).
+ */
+void circuit_ir_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshold);
 
 /**
  * Adds a GATE_LOOP_START instruction and returns its index in the instruction
