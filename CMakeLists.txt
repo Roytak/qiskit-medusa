@@ -17,6 +17,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # sources
 set(libsrc
+    src/assertions.c
     src/circuit_ir.c
     src/error.c
     src/gates_symb.c

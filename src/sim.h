@@ -8,8 +8,13 @@
 
 #include <stdbool.h>
 #include <time.h>
+
+#include "assertions.h"
 #include "mtbdd.h"
 #include "circuit_ir.h"
+
+/// Eps for checking if probability is > 0 & < 1
+#define EPSILON 0.001
 
 /// Flags to run the simulation with
 typedef struct sim_flags {
