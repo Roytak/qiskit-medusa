@@ -62,6 +62,8 @@ void circuit_ir_destroy(circuit_ir_t *ir)
             free(ir->instrs[i].p.multi.qubits);
         } else if (ir->instrs[i].kind == GATE_ASSERT_EQ) {
             free(ir->instrs[i].p.assert.state_str);
+        } else if (ir->instrs[i].kind == GATE_ASSERT_SUP || ir->instrs[i].kind == GATE_ASSERT_ENT) {
+            free(ir->instrs[i].p.assert.qubits);
         }
     }
     free(ir->instrs);
@@ -157,6 +159,16 @@ circuit_ir_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshol
     gate_instr_t instr = {
         .kind = GATE_ASSERT_EQ,
         .p.assert = { .prob = prob_threshold, .state_str = state_str }
+    };
+    push_instr(ir, instr);
+}
+
+void
+circuit_ir_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+{
+    gate_instr_t instr = {
+        .kind = GATE_ASSERT_SUP,
+        .p.assert = { .qubits = qubits, .n_qubits = n_qubits }
     };
     push_instr(ir, instr);
 }

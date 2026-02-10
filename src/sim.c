@@ -402,6 +402,7 @@ circuit_ir_t *parse_qasm(FILE *in)
         }
         else if (init) {
             /* ---- Loop control ---- */
+            printf("Parsing command: %s\n", cmd);
             if (strcmp(cmd, "for") == 0) {
                 if (in_loop) {
                     error_exit("Nested loops are not allowed, aborting.\n");
@@ -473,7 +474,52 @@ circuit_ir_t *parse_qasm(FILE *in)
                 circuit_ir_add_assert_eq(ir, state_str, prob);
             }
             else if (strcmp(cmd, "assert-sup") == 0) {
+                /* parse expected format: assert-sup q0, q1, ..., qn;
+                 * where q0, q1, ..., qn is the list of qubits that should be in the superposition
+                */
 
+                /* skip to the list of qubits */
+                char *qubits_to_check = cmd + strlen("assert-sup");
+                while (isspace(*qubits_to_check)) {
+                    qubits_to_check++;
+                }
+
+                /* count the amount of commas = number of qubits in the assertion - 1 */
+                uint32_t nqubits = 1;
+                for (char *p = qubits_to_check; *p; p++) {
+                    if (*p == ',') {
+                        nqubits++;
+                    }
+                }
+                uint32_t *qubits = my_malloc(nqubits * sizeof(uint32_t));
+
+                /* tokenize the list of qubits */
+                char delim = ',';
+                char *saveptr = NULL;
+                uint32_t idx = 0;
+                char *token = strtok_r(qubits_to_check, &delim, &saveptr);
+                while (token) {
+                    /* skip leading whitespace */
+                    while (isspace(*token)) {
+                        token++;
+                    }
+                    if (*token == '\0') {
+                        error_exit("Invalid format - empty qubit identifier in assert-sup command.\n");
+                    }
+
+                    /* parse the qubit index from the token */
+                    char *endptr;
+                    errno = 0;
+                    long n = strtol(token, &endptr, 10);
+                    if (token == endptr || errno != 0 || n < 0 || n > UINT32_MAX) {
+                        error_exit("Invalid format - not a valid qubit identifier in assert-sup command.\n");
+                    }
+                    qubits[idx++] = (uint32_t)n;
+
+                    token = strtok_r(NULL, &delim, &saveptr);
+                }
+
+                circuit_ir_add_assert_sup(ir, qubits, nqubits);
             }
             else if (strcmp(cmd, "assert-ent") == 0) {
 
@@ -614,6 +660,37 @@ assert_equal(const char *expected_state, double prob_threshold, MTBDD *circ)
     }
 }
 
+static void
+assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint32_t circ_nqubits, MTBDD *circ)
+{
+    int r;
+    char **indices = NULL;
+    double *probs = NULL;
+
+    r = medusa_get_counts(*circ, circ_nqubits, &indices, &probs);
+    if (r) {
+        error_exit("Error occurred while retrieving state probabilities for superposition assertion.\n");
+    }
+
+    /* a qubit is in superposition if the probability of it being in state |1> is between 0 and 1 (exclusive),
+     * so go through all the states and sum the probabilities of states where the i-th qubit is in state |1> */
+    for (uint32_t i = 0; i < nqubits_to_check; i++) {
+        double sum = 0.0;
+        for (uint32_t j = 0; indices[j]; j++) {
+            if (indices[j][qubits_to_check[i]] == '1') {
+                sum += probs[j];
+            }
+        }
+
+        if ((sum == 0) || (sum == 1)) {
+            error_exit("Assertion failed: qubit %u is not in superposition (probability of being in state |1> is %f)\n",
+                    qubits_to_check[i], sum);
+        }
+    }
+
+    medusa_free_counts(indices, probs);
+}
+
 /* ================================================================== */
 /*  simulate_ir  –  circuit_ir_t  →  MTBDD simulation                  */
 /* ================================================================== */
@@ -698,6 +775,7 @@ static void dispatch_gate(const gate_instr_t *instr, bool use_symb,
     case GATE_LOOP_START:
     case GATE_LOOP_END:
     case GATE_ASSERT_EQ:
+    case GATE_ASSERT_SUP:
         break;
     }
 }
@@ -794,6 +872,10 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
         /* ---- Assertions --------------------------------- */
         case GATE_ASSERT_EQ:
             assert_equal(instr->p.assert.state_str, instr->p.assert.prob, circ);
+            break;
+
+        case GATE_ASSERT_SUP:
+            assert_superposition(instr->p.assert.qubits, instr->p.assert.n_qubits, ir->n_qubits, circ);
             break;
 
         /* ---- All regular gates --------------------------------- */
