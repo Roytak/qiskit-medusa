@@ -173,6 +173,16 @@ circuit_ir_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
     push_instr(ir, instr);
 }
 
+void
+circuit_ir_add_assert_ent(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+{
+    gate_instr_t instr = {
+        .kind = GATE_ASSERT_ENT,
+        .p.assert = { .qubits = qubits, .n_qubits = n_qubits }
+    };
+    push_instr(ir, instr);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Loop control                                                       */
 /* ------------------------------------------------------------------ */

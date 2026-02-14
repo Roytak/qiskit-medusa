@@ -198,6 +198,12 @@ void circuit_ir_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_thr
 void circuit_ir_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
 
 /**
+ * Adds an assertion that the specified qubits are entangled
+ * (i.e. they are in a superposition and their state cannot be factored into a product of individual qubit states).
+ */
+void circuit_ir_add_assert_ent(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
+
+/**
  * Adds a GATE_LOOP_START instruction and returns its index in the instruction
  * array so the caller can later patch `body_end` when GATE_LOOP_END is added.
  */

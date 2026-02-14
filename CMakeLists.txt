@@ -43,7 +43,7 @@ set(headers
 add_library(medusa SHARED ${libsrc} ${headers})
 
 # compile with debug symbols and optimization
-target_compile_options(medusa PRIVATE -g -O2)
+target_compile_options(medusa PRIVATE -g)
 
 # include directories
 target_include_directories(medusa PRIVATE src)

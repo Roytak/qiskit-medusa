@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 
+#include "circuit_ir.h"
 #include "mtbdd.h"
 
 /**
@@ -24,5 +25,15 @@ void assert_equal(const char *expected_state, double prob_threshold, MTBDD *circ
  * @param[in] circ MTBDD representing the circuit state.
  */
 void assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint32_t circ_nqubits, MTBDD *circ);
+
+/**
+ * @brief Asserts that the specified qubits are in an entangled state.
+ *
+ * @param[in] qubits_to_check Array of qubit indices to check for entanglement.
+ * @param[in] nqubits_to_check Number of qubits to check.
+ * @param[in] ir Circuit intermediate representation.
+ * @param[in] circ MTBDD representing the circuit state.
+ */
+void assert_entanglement(uint32_t *qubits_to_check, uint32_t nqubits_to_check, const circuit_ir_t *ir, MTBDD *circ);
 
 #endif /* ASSERTIONS_H */

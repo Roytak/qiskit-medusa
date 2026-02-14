@@ -471,13 +471,40 @@ circuit_ir_t *parse_qasm(FILE *in)
 
                 circuit_ir_add_assert_eq(ir, state_str, prob);
             }
-            else if (strcmp(cmd, "assert-sup") == 0) {
-                /* parse expected format: assert-sup q0, q1, ..., qn;
-                 * where q0, q1, ..., qn is the list of qubits that should be in the superposition
+            else if ((strcmp(cmd, "assert-sup") == 0) || (strcmp(cmd, "assert-ent") == 0)) {
+                /* parse expected format: assert-sup/ent q0, q1, ..., qn;
+                 * where q0, q1, ..., qn is the list of qubits that should be in the superposition/entangled state
                 */
 
+                int is_sup;
+                if (strcmp(cmd, "assert-sup") == 0) {
+                    is_sup = 1;
+                } else {
+                    is_sup = 0;
+                }
+
+                /* read the whole line until ';' */
+                char line[CMD_MAX_LEN] = {0};
+                while (true) {
+                    c = fgetc(in);
+                    if (c == EOF) {
+                        error_exit("Invalid format - reached an unexpected end of file when parsing an assertion.\n");
+                    }
+                    else if (c == ';') {
+                        break;
+                    }
+                    int len = strlen(line);
+                    if (len + 1 < CMD_MAX_LEN) {
+                        line[len] = (char)c;
+                        line[len + 1] = '\0';
+                    }
+                    else {
+                        error_exit("Invalid command (command too long).\n");
+                    }
+                }
+
                 /* skip to the list of qubits */
-                char *qubits_to_check = cmd + strlen("assert-sup");
+                char *qubits_to_check = line;
                 while (isspace(*qubits_to_check)) {
                     qubits_to_check++;
                 }
@@ -492,17 +519,24 @@ circuit_ir_t *parse_qasm(FILE *in)
                 uint32_t *qubits = my_malloc(nqubits * sizeof(uint32_t));
 
                 /* tokenize the list of qubits */
-                char delim = ',';
                 char *saveptr = NULL;
                 uint32_t idx = 0;
-                char *token = strtok_r(qubits_to_check, &delim, &saveptr);
+                char *token = strtok_r(qubits_to_check, ",", &saveptr);
                 while (token) {
                     /* skip leading whitespace */
                     while (isspace(*token)) {
                         token++;
                     }
                     if (*token == '\0') {
-                        error_exit("Invalid format - empty qubit identifier in assert-sup command.\n");
+                        error_exit("Invalid format - empty qubit identifier in assert-%s command.\n", is_sup ? "sup" : "ent");
+                    } else if (*token != 'q') {
+                        error_exit("Invalid format - expected qubit identifier starting with 'q' in assert-%s command.\n", is_sup ? "sup" : "ent");
+                    }
+
+                    /* skip the 'q' character */
+                    token++;
+                    if (!isdigit(*token)) {
+                        error_exit("Invalid format - expected a number after 'q' in qubit identifier in assert-%s command.\n", is_sup ? "sup" : "ent");
                     }
 
                     /* parse the qubit index from the token */
@@ -510,17 +544,18 @@ circuit_ir_t *parse_qasm(FILE *in)
                     errno = 0;
                     long n = strtol(token, &endptr, 10);
                     if (token == endptr || errno != 0 || n < 0 || n > UINT32_MAX) {
-                        error_exit("Invalid format - not a valid qubit identifier in assert-sup command.\n");
+                        error_exit("Invalid format - not a valid qubit identifier in assert-%s command.\n", is_sup ? "sup" : "ent");
                     }
                     qubits[idx++] = (uint32_t)n;
 
-                    token = strtok_r(NULL, &delim, &saveptr);
+                    token = strtok_r(NULL, ",", &saveptr);
                 }
 
-                circuit_ir_add_assert_sup(ir, qubits, nqubits);
-            }
-            else if (strcmp(cmd, "assert-ent") == 0) {
-
+                if (is_sup) {
+                    circuit_ir_add_assert_sup(ir, qubits, nqubits);
+                } else {
+                    circuit_ir_add_assert_ent(ir, qubits, nqubits);
+                }
             }
             /* ---- Single-qubit gates ---- */
             else if (strcasecmp(cmd, "x") == 0) {
@@ -717,6 +752,7 @@ static void dispatch_gate(const gate_instr_t *instr, bool use_symb,
     case GATE_LOOP_END:
     case GATE_ASSERT_EQ:
     case GATE_ASSERT_SUP:
+    case GATE_ASSERT_ENT:
         break;
     }
 }
@@ -817,6 +853,10 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
 
         case GATE_ASSERT_SUP:
             assert_superposition(instr->p.assert.qubits, instr->p.assert.n_qubits, ir->n_qubits, circ);
+            break;
+
+        case GATE_ASSERT_ENT:
+            assert_entanglement(instr->p.assert.qubits, instr->p.assert.n_qubits, ir, circ);
             break;
 
         /* ---- All regular gates --------------------------------- */
