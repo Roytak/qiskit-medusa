@@ -66,90 +66,49 @@ assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint3
 }
 
 /**
- * Checks whether two qubits are connected through a chain of multi-qubit gate
- * interactions in the circuit (BFS on the interaction graph).
- *
- * Two qubits x and y interact if there is a multi-qubit gate acting on both,
- * or if x shares a gate with some qubit z that (transitively) interacts with y.
+ * Check if qubits q1 and q2 are connected through interactions in the circuit IR
+ * (i.e. there is a gate that has them both as operands).
  */
 static int
 qubits_are_connected(uint32_t q1, uint32_t q2, const circuit_ir_t *ir)
 {
-    if (q1 == q2) return 1;
+    if (q1 >= ir->n_qubits || q2 >= ir->n_qubits) {
+        error_exit("Invalid qubit index in entanglement assertion: %u or %u is out of bounds (circuit has %u qubits)\n",
+                q1, q2, ir->n_qubits);
+    }
 
-    uint32_t n = ir->n_qubits;
-    uint8_t  visited[n];
-    uint32_t queue[n];
+    if (!ir->qubit_interactions) {
+        return 0;  /* no interactions at all */
+    }
+
+    if (q1 == q2) {
+        /* same qubit, trivially connected */
+        return 1;
+    }
+
+    if (ir->qubit_interactions[q1][q2]) {
+        /* directly interact */
+        return 1;
+    }
+
+    /* Check if they interact through a chain of interactions with other qubits in qubits_to_check. */
+    uint8_t visited[ir->n_qubits];
+    uint32_t queue[ir->n_qubits];
     uint32_t head = 0, tail = 0;
 
-    memset(visited, 0, n * sizeof(uint8_t));
-
+    memset(visited, 0, ir->n_qubits * sizeof(uint8_t));
     visited[q1] = 1;
     queue[tail++] = q1;
-
     while (head < tail) {
         uint32_t curr = queue[head++];
 
-        for (size_t i = 0; i < ir->len; i++) {
-            const gate_instr_t *instr = &ir->instrs[i];
-
-            switch (instr->kind) {
-            case GATE_CX:
-            case GATE_CZ: {
-                uint32_t qc = instr->p.controlled.qc;
-                uint32_t qt = instr->p.controlled.qt;
-                if (curr == qc || curr == qt) {
-                    uint32_t other = (curr == qc) ? qt : qc;
-                    if (other == q2) return 1;
-                    if (!visited[other]) {
-                        visited[other] = 1;
-                        queue[tail++] = other;
-                    }
+        for (uint32_t other = 0; other < ir->n_qubits; other++) {
+            if (ir->qubit_interactions[curr][other] && !visited[other]) {
+                if (other == q2) {
+                    return 1;
                 }
-                break;
-            }
-            case GATE_CCX: {
-                uint32_t qc1 = instr->p.toffoli.qc1;
-                uint32_t qc2 = instr->p.toffoli.qc2;
-                uint32_t qt  = instr->p.toffoli.qt;
-                if (curr == qc1 || curr == qc2 || curr == qt) {
-                    uint32_t others[3] = {qc1, qc2, qt};
-                    for (int j = 0; j < 3; j++) {
-                        if (others[j] != curr) {
-                            if (others[j] == q2) return 1;
-                            if (!visited[others[j]]) {
-                                visited[others[j]] = 1;
-                                queue[tail++] = others[j];
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-            case GATE_MCX: {
-                uint32_t *qubits = instr->p.multi.qubits;
-                uint32_t  nq     = instr->p.multi.n_qubits;
-                int involves_curr = 0;
-                for (uint32_t j = 0; j < nq; j++) {
-                    if (qubits[j] == curr) { involves_curr = 1; break; }
-                }
-                if (involves_curr) {
-                    for (uint32_t j = 0; j < nq; j++) {
-                        if (qubits[j] != curr) {
-                            if (qubits[j] == q2) return 1;
-                            if (!visited[qubits[j]]) {
-                                visited[qubits[j]] = 1;
-                                queue[tail++] = qubits[j];
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-            default:
-                /* Single-qubit gates, measurements, assertions, and loop
-                 * control do not create qubit-qubit interactions. */
-                break;
+                visited[other] = 1;
+                queue[tail++] = other;
             }
         }
     }
@@ -160,35 +119,14 @@ qubits_are_connected(uint32_t q1, uint32_t q2, const circuit_ir_t *ir)
 void
 assert_entanglement(uint32_t *qubits_to_check, uint32_t nqubits_to_check, const circuit_ir_t *ir, MTBDD *circ)
 {
-    uint8_t adjacency_matrix[nqubits_to_check][nqubits_to_check];
-
-    if (nqubits_to_check < 2) {
-        printf("Entanglement assertion requires at least 2 qubits to check, but got %u.\n", nqubits_to_check);
-        return;
-    }
-
-    memset(adjacency_matrix, 0, sizeof(adjacency_matrix));
-
-    /* build the adjacency matrix by going through pairs of qubits,
-     * for each pair check if they interact with each other in the circuit (i.e. there is a gate that has them both as operands)
-     * or the first one operates with another qubit that operates with the second one and so on, recursively.
-     * If they interact, mark them as connected in the adjacency matrix. */
+    /* Check that every pair of qubits in qubits_to_check interacts with each other */
     for (uint32_t i = 0; i < nqubits_to_check; i++) {
         uint32_t q1 = qubits_to_check[i];
         for (uint32_t j = i + 1; j < nqubits_to_check; j++) {
             uint32_t q2 = qubits_to_check[j];
 
-            if (qubits_are_connected(q1, q2, ir)) {
-                adjacency_matrix[i][j] = 1;
-                adjacency_matrix[j][i] = 1;
-            }
-        }
-    }
-
-    for (uint32_t i = 0; i < nqubits_to_check; i++) {
-        for (uint32_t j = i + 1; j < nqubits_to_check; j++) {
-            if (!adjacency_matrix[i][j]) {
-                error_exit("Assertion failed: qubits %u and %u are not entangled\n", qubits_to_check[i], qubits_to_check[j]);
+            if (!qubits_are_connected(q1, q2, ir)) {
+                error_exit("Assertion failed: qubits %u and %u are not entangled\n", q1, q2);
             }
         }
     }

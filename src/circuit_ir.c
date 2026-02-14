@@ -34,6 +34,37 @@ static size_t push_instr(circuit_ir_t *ir, gate_instr_t instr)
     return idx;
 }
 
+/**
+ * Records that qubits `q1` and `q2` interact (i.e. there is a gate that has them both as operands).
+ */
+static void add_interaction2(circuit_ir_t *ir, uint32_t q1, uint32_t q2)
+{
+    /* Ensure qubit_interactions is allocated and large enough */
+    if (!ir->qubit_interactions) {
+        ir->qubit_interactions = my_malloc(ir->n_qubits * sizeof(uint32_t*));
+        for (uint32_t i = 0; i < ir->n_qubits; i++) {
+            ir->qubit_interactions[i] = my_malloc(ir->n_qubits * sizeof(uint32_t));
+        }
+    }
+
+    /* Add q2 to q1's interaction list */
+    ir->qubit_interactions[q1][q2] = 1;
+
+    /* Add q1 to q2's interaction list */
+    ir->qubit_interactions[q2][q1] = 1;
+}
+
+/**
+ * Records that qubits `q1`, `q2`, and `q3` interact with each other (i.e. there is a gate that has them all as operands).
+ */
+static void add_interaction3(circuit_ir_t *ir, uint32_t q1, uint32_t q2, uint32_t q3)
+{
+    /* add interactions for all pairs among q1, q2, q3 */
+    add_interaction2(ir, q1, q2);
+    add_interaction2(ir, q1, q3);
+    add_interaction2(ir, q2, q3);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Lifecycle                                                          */
 /* ------------------------------------------------------------------ */
@@ -48,6 +79,7 @@ circuit_ir_t *circuit_ir_create(void)
     ir->n_bits = 0;
     ir->bits_to_measure = NULL;
     ir->has_measure = false;
+    ir->qubit_interactions = NULL;
     return ir;
 }
 
@@ -65,6 +97,13 @@ void circuit_ir_destroy(circuit_ir_t *ir)
         } else if (ir->instrs[i].kind == GATE_ASSERT_SUP || ir->instrs[i].kind == GATE_ASSERT_ENT) {
             free(ir->instrs[i].p.assert.qubits);
         }
+    }
+    /* Free qubit interaction arrays */
+    if (ir->qubit_interactions) {
+        for (uint32_t i = 0; i < ir->n_qubits; i++) {
+            free(ir->qubit_interactions[i]);
+        }
+        free(ir->qubit_interactions);
     }
     free(ir->instrs);
     free(ir->bits_to_measure);
@@ -98,12 +137,14 @@ void circuit_ir_add_cx(circuit_ir_t *ir, uint32_t qc, uint32_t qt)
 {
     gate_instr_t instr = { .kind = GATE_CX, .p.controlled = { .qc = qc, .qt = qt } };
     push_instr(ir, instr);
+    add_interaction2(ir, qc, qt);
 }
 
 void circuit_ir_add_cz(circuit_ir_t *ir, uint32_t qc, uint32_t qt)
 {
     gate_instr_t instr = { .kind = GATE_CZ, .p.controlled = { .qc = qc, .qt = qt } };
     push_instr(ir, instr);
+    add_interaction2(ir, qc, qt);
 }
 
 /* ------------------------------------------------------------------ */
@@ -117,6 +158,7 @@ void circuit_ir_add_ccx(circuit_ir_t *ir, uint32_t qc1, uint32_t qc2, uint32_t q
         .p.toffoli = { .qc1 = qc1, .qc2 = qc2, .qt = qt }
     };
     push_instr(ir, instr);
+    add_interaction3(ir, qc1, qc2, qt);
 }
 
 /* ------------------------------------------------------------------ */
@@ -130,6 +172,12 @@ void circuit_ir_add_mcx(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
         .p.multi = { .qubits = qubits, .n_qubits = n_qubits }
     };
     push_instr(ir, instr);
+    /* Add interactions for all pairs of qubits in the MCX */
+    for (uint32_t i = 0; i < n_qubits; i++) {
+        for (uint32_t j = i + 1; j < n_qubits; j++) {
+            add_interaction2(ir, qubits[i], qubits[j]);
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */

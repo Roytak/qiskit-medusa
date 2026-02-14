@@ -128,7 +128,12 @@ typedef struct circuit_ir {
 
     uint32_t      n_qubits;       ///< number of qubits
     int           n_bits;         ///< number of classical bits (0 if none)
-    int          *bits_to_measure; ///< qubit → classical bit mapping (NULL if none)
+
+    uint32_t **qubit_interactions; ///< qubit -> list of interacted qubits, used for entanglement assertions.
+                                    /// Length is n_qubits, each entry is n_qubits long and
+                                    /// qubit_interactions[i][j] is 1 if qubits i and j interact, 0 otherwise.
+
+    int          *bits_to_measure; ///< qubit -> classical bit mapping (NULL if none)
     bool          has_measure;    ///< true if any measure instruction was added
 } circuit_ir_t;
 
