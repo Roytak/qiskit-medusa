@@ -7,10 +7,17 @@
 #include <sylvan.h>
 #include <sylvan_int.h>
 
+#include "circuit_ir.h"
 #include "medusa.h"
 #include "mtbdd.h"
 #include "sim.h"
 #include "symb_utils.h"
+
+#define CHECK_IR_HANDLE_RET(ir) \
+    if (!(ir)) { \
+        fprintf(stderr, "Invalid circuit IR handle\n"); \
+        return 1; \
+    }
 
 void
 medusa_init(void)
@@ -24,6 +31,243 @@ void
 medusa_destroy(void)
 {
     stop_sylvan();
+}
+
+circuit_ir_t *
+medusa_circuit_create(void)
+{
+    return circuit_ir_create();
+}
+
+void
+medusa_circuit_destroy(circuit_ir_t *ir)
+{
+    circuit_ir_destroy(ir);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Qubit / bit register setup                                         */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_set_qubits(circuit_ir_t *ir, uint32_t n)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_set_qubits(ir, n);
+    return 0;
+}
+
+int
+medusa_set_bits(circuit_ir_t *ir, uint32_t n)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_set_bits(ir, n);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Single-qubit gates                                                 */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_add_x(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_x(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_y(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_y(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_z(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_z(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_h(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_h(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_s(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_s(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_t(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_t(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_rx_pihalf(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_rx_pihalf(ir, qt);
+    return 0;
+}
+
+int
+medusa_add_ry_pihalf(circuit_ir_t *ir, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_ry_pihalf(ir, qt);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Two-qubit gates                                                    */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_add_cx(circuit_ir_t *ir, uint32_t qc, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_cx(ir, qc, qt);
+    return 0;
+}
+
+int
+medusa_add_cz(circuit_ir_t *ir, uint32_t qc, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_cz(ir, qc, qt);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Three-qubit gates                                                  */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_add_ccx(circuit_ir_t *ir, uint32_t qc1, uint32_t qc2, uint32_t qt)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_ccx(ir, qc1, qc2, qt);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Multi-qubit gates                                                  */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_add_mcx(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+{
+    if (!ir || !qubits || n_qubits == 0) {
+        fprintf(stderr, "Invalid arguments to medusa_add_mcx\n");
+        return 1;
+    }
+
+    /* circuit_ir_add_mcx takes ownership, so we must duplicate */
+    uint32_t *dup = malloc(n_qubits * sizeof(uint32_t));
+    if (!dup) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
+    memcpy(dup, qubits, n_qubits * sizeof(uint32_t));
+
+    circuit_ir_add_mcx(ir, dup, n_qubits);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Measurement                                                        */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_add_measure(circuit_ir_t *ir, uint32_t qt, uint32_t ct)
+{
+    CHECK_IR_HANDLE_RET(ir);
+
+    circuit_ir_add_measure(ir, qt, ct);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Assertions                                                        */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshold)
+{
+    if (!ir || !state_str) {
+        fprintf(stderr, "Invalid arguments to medusa_add_assert_eq\n");
+        return 1;
+    }
+
+    circuit_ir_add_assert_eq(ir, state_str, prob_threshold);
+    return 0;
+}
+
+int
+medusa_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+{
+    if (!ir || !qubits || n_qubits == 0) {
+        fprintf(stderr, "Invalid arguments to medusa_add_assert_sup\n");
+        return 1;
+    }
+
+    circuit_ir_add_assert_sup(ir, qubits, n_qubits);
+    return 0;
+}
+
+int
+medusa_add_assert_ent(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+{
+    if (!ir || !qubits || n_qubits == 0) {
+        fprintf(stderr, "Invalid arguments to medusa_add_assert_ent\n");
+        return 1;
+    }
+
+    circuit_ir_add_assert_ent(ir, qubits, n_qubits);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Circuit simulation from IR handle                                  */
+/* ------------------------------------------------------------------ */
+
+int
+medusa_simulate_circuit(circuit_ir_t *ir, int symbolic, MTBDD *mtbdd)
+{
+    if (!ir || !mtbdd) {
+        fprintf(stderr, "Invalid arguments to medusa_simulate_circuit\n");
+        return 1;
+    }
+
+    return simulate_ir(ir, symbolic, mtbdd) ? 0 : 1;
 }
 
 int
