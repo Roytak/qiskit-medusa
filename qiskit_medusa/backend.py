@@ -7,12 +7,8 @@ from qiskit.circuit.library import (
 )
 from qiskit.providers.options import Options
 import uuid
-import tempfile
 from qiskit.result import Result
-import os
 from qiskit.providers.jobstatus import JobStatus
-from qiskit.qasm3 import dumps
-import re
 from qiskit.circuit import ForLoopOp, Gate, QuantumCircuit
 import numpy as np
 
@@ -37,36 +33,102 @@ class MedusaJob(JobV1):
         self._wrapper = wrapper
         self.symbolic = symbolic
         self._result = None
+        self._handle = None
+
+    def _add_instructions(self, circuit, qubit_map=None, clbit_map=None):
+        """
+        Recursively walk *circuit* and translate every instruction into
+        the corresponding libmedusa C call on self._handle.
+
+        qubit_map / clbit_map: optional dicts that remap local qubit/clbit
+        indices to top-level indices (needed for control-flow bodies).
+        """
+        for instruction in circuit.data:
+            op = instruction.operation
+            name = op.name
+
+            # resolve local -> top-level qubit / clbit indices
+            local_qubits = [circuit.find_bit(q).index for q in instruction.qubits]
+            local_clbits = [circuit.find_bit(c).index for c in instruction.clbits]
+
+            qubits = [qubit_map[q] for q in local_qubits] if qubit_map else local_qubits
+            clbits = [clbit_map[c] for c in local_clbits] if clbit_map else local_clbits
+
+            # -- single-qubit gates --
+            if name == 'x':
+                self._wrapper.add_x(self._handle, qubits[0])
+            elif name == 'y':
+                self._wrapper.add_y(self._handle, qubits[0])
+            elif name == 'z':
+                self._wrapper.add_z(self._handle, qubits[0])
+            elif name == 'h':
+                self._wrapper.add_h(self._handle, qubits[0])
+            elif name == 's':
+                self._wrapper.add_s(self._handle, qubits[0])
+            elif name == 't':
+                self._wrapper.add_t(self._handle, qubits[0])
+            elif name == 'sx':
+                self._wrapper.add_rx_pihalf(self._handle, qubits[0])
+            elif name == 'sy':
+                self._wrapper.add_ry_pihalf(self._handle, qubits[0])
+
+            # -- two-qubit gates --
+            elif name == 'cx':
+                self._wrapper.add_cx(self._handle, qubits[0], qubits[1])
+            elif name == 'cz':
+                self._wrapper.add_cz(self._handle, qubits[0], qubits[1])
+
+            # -- three-qubit gate --
+            elif name == 'ccx':
+                self._wrapper.add_ccx(self._handle, qubits[0], qubits[1], qubits[2])
+
+            # -- multi-controlled X --
+            elif name == 'mcx':
+                self._wrapper.add_mcx(self._handle, qubits)
+
+            # -- measurement --
+            elif name == 'measure':
+                self._wrapper.add_measure(self._handle, qubits[0], clbits[0])
+
+            # -- control flow: for loop --
+            elif name == 'for_loop':
+                indexset, _loop_param, body = op.params
+                # map body-local qubit/clbit indices -> top-level indices
+                body_qubit_map = {i: qubits[i] for i in range(len(qubits))}
+                body_clbit_map = {i: clbits[i] for i in range(len(clbits))}
+                for _ in indexset:
+                    self._add_instructions(body, body_qubit_map, body_clbit_map)
+
+            # -- skip no-ops --
+            elif name == 'barrier':
+                pass
+
+            else:
+                raise RuntimeError(f"Unsupported gate: {name}")
 
     def submit(self):
         """
         Submit the job to the MEDUSA simulator.
+        Uses the C API directly via the wrapper's add_* methods.
         """
-        # create a temporary file to hold the circuit, use delete=False so wrapper can access it, but need to clean up later
-        temp_qasm = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.qasm')
-
+        self._handle = self._wrapper.circuit_create()
         try:
-            # convert the circuit to OpenQASM 2.0
-            qasm_str = dumps(self.circuit)
+            # set up qubit and classical bit registers
+            self._wrapper.set_qubits(self._handle, self.circuit.num_qubits)
+            self._wrapper.set_bits(self._handle, self.circuit.num_clbits)
 
-            # MEDUSA doesnt support 'barrier' instructions, so we skip them during dump
-            qasm_str = re.sub(r'barrier\s+[^;]*;\n?', '', qasm_str)
+            # walk through the circuit and add gates
+            self._add_instructions(self.circuit)
 
-            # also MEDUSA expects rx/y(pi/2) instead of sx/y, so we replace those
-            qasm_str = re.sub(r"\bsx\b", "rx(pi/2)", qasm_str)
-            qasm_str = re.sub(r"\bsy\b", "ry(pi/2)", qasm_str)
-
-            # write to temporary file
-            temp_qasm.write(qasm_str)
-            temp_qasm.flush()
-            temp_qasm.close()
-
-            print("Simulating circuit:\n", qasm_str)
             # run the simulation
-            mtbdd = self._wrapper.simulate_qasm_file(temp_qasm.name, self.symbolic)
+            mtbdd = self._wrapper.simulate_circuit(self._handle, symbolic=self.symbolic)
 
             # retrieve results
-            counts = self._wrapper.get_counts(shots=self.shots, num_qubits=self.circuit.num_qubits, mtbdd=mtbdd)
+            counts = self._wrapper.get_counts(
+                shots=self.shots,
+                num_qubits=self.circuit.num_qubits,
+                mtbdd=mtbdd,
+            )
 
             # only keep non-zero counts
             counts = {k: v for k, v in counts.items() if v > 0}
@@ -86,8 +148,11 @@ class MedusaJob(JobV1):
                         'header': {
                             'name': self.circuit.name,
                             'memory_slots': self.circuit.num_clbits,
-                            'creg_sizes': [[creg.name, creg.size] for creg in self.circuit.cregs]
-                        }
+                            'creg_sizes': [
+                                [creg.name, creg.size]
+                                for creg in self.circuit.cregs
+                            ],
+                        },
                     }
                 ],
                 'backend_name': self.backend().name,
@@ -107,12 +172,13 @@ class MedusaJob(JobV1):
                 'success': False,
                 'status': str(e),
             })
-            raise e
+            raise
 
         finally:
-            # clean up temporary file
-            if os.path.exists(temp_qasm.name):
-                os.remove(temp_qasm.name)
+            # free the C-side circuit handle
+            if self._handle is not None:
+                self._wrapper.circuit_destroy(self._handle)
+                self._handle = None
 
     def result(self):
         """

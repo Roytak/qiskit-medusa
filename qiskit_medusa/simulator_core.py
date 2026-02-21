@@ -330,16 +330,3 @@ class MedusaWrapper:
         lib.medusa_free_counts(indices_ptr, probs_ptr)
 
         return counts
-
-    def simulate_qasm_file(self, filename: str, symbolic: bool = False):
-        # prepare args
-        b_filename = filename.encode('utf-8')
-        symbolic = 1 if symbolic else 0
-        mtbdd = MTBDD()
-
-        # run simulation
-        res = lib.medusa_simulate_file(b_filename, symbolic, ctypes.byref(mtbdd))
-        if res != 0:
-            raise RuntimeError(f"Simulation failed for file: {filename}")
-
-        return mtbdd
