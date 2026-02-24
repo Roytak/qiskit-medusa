@@ -10,7 +10,121 @@ import uuid
 from qiskit.result import Result
 from qiskit.providers.jobstatus import JobStatus
 from qiskit.circuit import ForLoopOp, Gate, QuantumCircuit
+from qiskit.circuit import Instruction
 import numpy as np
+
+# ---------------------------------------------------------------------------
+#  Custom assertion instructions
+# ---------------------------------------------------------------------------
+
+class AssertEq(Instruction):
+    """
+    Assertion that a specific computational-basis state has a given probability.
+
+    Parameters
+    ----------
+    state_str : str
+        Bitstring of the expected state, e.g. "01".
+    prob : float
+        Expected probability (compared up to a small epsilon).
+    """
+
+    def __init__(self, state_str: str, prob: float, label=None):
+        # 0-qubit, 0-clbit pseudo-instruction; parameters carry the data
+        super().__init__("assert_eq", 0, 0, params=[state_str, prob], label=label)
+
+
+class AssertSuperposition(Instruction):
+    """
+    Assertion that the listed qubits are in a superposition state.
+
+    Usage::
+
+        qc.append(AssertSuperposition(num_qubits=2), [0, 1])
+    """
+
+    def __init__(self, num_qubits: int, label=None):
+        super().__init__("assert_sup", num_qubits, 0, [], label=label)
+
+
+class AssertEntangled(Instruction):
+    """
+    Assertion that the listed qubits are in an entangled state.
+
+    Usage::
+
+        qc.append(AssertEntangled(num_qubits=2), [0, 1])
+    """
+
+    def __init__(self, num_qubits: int, label=None):
+        super().__init__("assert_ent", num_qubits, 0, [], label=label)
+
+
+# ---------------------------------------------------------------------------
+#  Convenience methods patched onto QuantumCircuit
+# ---------------------------------------------------------------------------
+
+def _assert_eq(self, state_str: str, prob: float):
+    """Assert that a specific computational-basis state has a given probability.
+
+    Parameters
+    ----------
+    state_str : str
+        Bitstring of the expected state, e.g. ``"01"``.
+    prob : float
+        Expected probability (compared up to a small epsilon).
+
+    Returns
+    -------
+    QuantumCircuit
+        *self*, so calls can be chained.
+    """
+    self.append(AssertEq(state_str, prob), [], [])
+    return self
+
+
+def _assert_superposition(self, qubits):
+    """Assert that the given qubits are in a superposition state.
+
+    Parameters
+    ----------
+    qubits : int | list[int]
+        Qubit index or list of qubit indices.
+
+    Returns
+    -------
+    QuantumCircuit
+        *self*, so calls can be chained.
+    """
+    if isinstance(qubits, int):
+        qubits = [qubits]
+    self.append(AssertSuperposition(num_qubits=len(qubits)), qubits, [])
+    return self
+
+
+def _assert_entangled(self, qubits):
+    """Assert that the given qubits are entangled.
+
+    Parameters
+    ----------
+    qubits : int | list[int]
+        Qubit index or list of qubit indices (at least 2).
+
+    Returns
+    -------
+    QuantumCircuit
+        *self*, so calls can be chained.
+    """
+    if isinstance(qubits, int):
+        qubits = [qubits]
+    self.append(AssertEntangled(num_qubits=len(qubits)), qubits, [])
+    return self
+
+# monkey-patch the assertion methods onto QuantumCircuit
+QuantumCircuit.assert_eq = _assert_eq
+QuantumCircuit.assert_superposition = _assert_superposition
+QuantumCircuit.assert_entangled = _assert_entangled
+
 
 class SYGate(Gate):
     """
@@ -89,6 +203,17 @@ class MedusaJob(JobV1):
             # -- measurement --
             elif name == 'measure':
                 self._wrapper.add_measure(self._handle, qubits[0], clbits[0])
+
+            # -- assertions --
+            elif name == 'assert_eq':
+                state_str, prob = op.params
+                self._wrapper.add_assert_eq(self._handle, state_str, prob)
+
+            elif name == 'assert_sup':
+                self._wrapper.add_assert_sup(self._handle, qubits)
+
+            elif name == 'assert_ent':
+                self._wrapper.add_assert_ent(self._handle, qubits)
 
             # -- control flow: for loop --
             elif name == 'for_loop':

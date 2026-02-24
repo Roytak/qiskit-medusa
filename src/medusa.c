@@ -220,38 +220,58 @@ medusa_add_measure(circuit_ir_t *ir, uint32_t qt, uint32_t ct)
 /* ------------------------------------------------------------------ */
 
 int
-medusa_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshold)
+medusa_add_assert_eq(circuit_ir_t *ir, const char *state_str, double prob_threshold)
 {
     if (!ir || !state_str) {
         fprintf(stderr, "Invalid arguments to medusa_add_assert_eq\n");
         return 1;
     }
 
-    circuit_ir_add_assert_eq(ir, state_str, prob_threshold);
+    char *dup = strdup(state_str);
+    if (!dup) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
+
+    circuit_ir_add_assert_eq(ir, dup, prob_threshold);
     return 0;
 }
 
 int
-medusa_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+medusa_add_assert_sup(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits)
 {
     if (!ir || !qubits || n_qubits == 0) {
         fprintf(stderr, "Invalid arguments to medusa_add_assert_sup\n");
         return 1;
     }
 
-    circuit_ir_add_assert_sup(ir, qubits, n_qubits);
+    uint32_t *dup = malloc(n_qubits * sizeof(uint32_t));
+    if (!dup) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
+    memcpy(dup, qubits, n_qubits * sizeof(uint32_t));
+
+    circuit_ir_add_assert_sup(ir, dup, n_qubits);
     return 0;
 }
 
 int
-medusa_add_assert_ent(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+medusa_add_assert_ent(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits)
 {
     if (!ir || !qubits || n_qubits == 0) {
         fprintf(stderr, "Invalid arguments to medusa_add_assert_ent\n");
         return 1;
     }
 
-    circuit_ir_add_assert_ent(ir, qubits, n_qubits);
+    uint32_t *dup = malloc(n_qubits * sizeof(uint32_t));
+    if (!dup) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
+    memcpy(dup, qubits, n_qubits * sizeof(uint32_t));
+
+    circuit_ir_add_assert_ent(ir, dup, n_qubits);
     return 0;
 }
 

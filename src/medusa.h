@@ -165,7 +165,7 @@ int medusa_add_measure(circuit_ir_t *ir, uint32_t qt, uint32_t ct);
  * @param[in] prob_threshold  The minimum probability threshold for the assertion.
  * @return 0 on success, non-zero on failure.
  */
-int medusa_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshold);
+int medusa_add_assert_eq(circuit_ir_t *ir, const char *state_str, double prob_threshold);
 
 /**
  * @brief Adds an assertion that a given set of qubits is in a superposition state.
@@ -175,7 +175,7 @@ int medusa_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_threshol
  * @param[in] n_qubits  Number of qubits in the array.
  * @return 0 on success, non-zero on failure.
  */
-int medusa_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
+int medusa_add_assert_sup(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
 
 /**
  * @brief Adds an assertion that a given set of qubits is in an entangled state.
@@ -185,7 +185,7 @@ int medusa_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
  * @param[in] n_qubits  Number of qubits in the array.
  * @return 0 on success, non-zero on failure.
  */
-int medusa_add_assert_ent(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
+int medusa_add_assert_ent(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
 
 /* ------------------------------------------------------------------ */
 /*  Simulation                                                         */

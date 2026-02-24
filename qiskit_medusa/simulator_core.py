@@ -127,6 +127,20 @@ lib.medusa_add_mcx.restype = c_int
 lib.medusa_add_measure.argtypes = [CIRCUIT_HANDLE, c_uint32, c_uint32]
 lib.medusa_add_measure.restype = c_int
 
+# -- Assertions --
+
+# int medusa_add_assert_eq(circuit_ir_t *ir, const char *state_str, double prob_threshold);
+lib.medusa_add_assert_eq.argtypes = [CIRCUIT_HANDLE, c_char_p, ctypes.c_double]
+lib.medusa_add_assert_eq.restype = c_int
+
+# int medusa_add_assert_sup(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
+lib.medusa_add_assert_sup.argtypes = [CIRCUIT_HANDLE, ctypes.POINTER(c_uint32), c_uint32]
+lib.medusa_add_assert_sup.restype = c_int
+
+# int medusa_add_assert_ent(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
+lib.medusa_add_assert_ent.argtypes = [CIRCUIT_HANDLE, ctypes.POINTER(c_uint32), c_uint32]
+lib.medusa_add_assert_ent.restype = c_int
+
 # -- Simulation --
 
 # int medusa_simulate_file(const char *filename, int symbolic, MTBDD *mtbdd);
