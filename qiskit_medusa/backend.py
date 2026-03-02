@@ -289,15 +289,29 @@ class MedusaJob(JobV1):
 
         except Exception as e:
             self._result = Result.from_dict({
-                'results': [],
+                'results': [
+                    {
+                        'shots': self.shots,
+                        'success': False,
+                        'data': {},
+                        'status': str(e),
+                        'header': {
+                            'name': self.circuit.name,
+                            'memory_slots': self.circuit.num_clbits,
+                            'creg_sizes': [
+                                [creg.name, creg.size]
+                                for creg in self.circuit.cregs
+                            ],
+                        },
+                    }
+                ],
                 'backend_name': self.backend().name,
                 'backend_version': self.backend().backend_version,
                 'job_id': self.job_id(),
                 'qobj_id': None,
                 'success': False,
-                'status': str(e),
+                'status': 'ERROR',
             })
-            raise
 
         finally:
             # free the C-side circuit handle
@@ -354,6 +368,11 @@ class MedusaBackend(BackendV2):
         self._target.add_instruction(CZGate(), properties=ideal_props)
         self._target.add_instruction(CCXGate(), properties=ideal_props)
         self._target.add_instruction(MCXGate(num_ctrl_qubits=3), properties=ideal_props)
+
+        # Assertions
+        self._target.add_instruction(AssertEq("0", 1.0), name="assert_eq", properties=ideal_props)
+        self._target.add_instruction(AssertSuperposition(num_qubits=1), name="assert_sup", properties=ideal_props)
+        self._target.add_instruction(AssertEntangled(num_qubits=2), name="assert_ent", properties=ideal_props)
 
         # Control Flow
         self._target.add_instruction(ForLoopOp, name="for_loop")

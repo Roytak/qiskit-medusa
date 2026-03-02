@@ -80,6 +80,8 @@ circuit_ir_t *circuit_ir_create(void)
     ir->bits_to_measure = NULL;
     ir->has_measure = false;
     ir->qubit_interactions = NULL;
+    ir->errs = NULL;
+    ir->err_count = 0;
     return ir;
 }
 
@@ -107,6 +109,7 @@ void circuit_ir_destroy(circuit_ir_t *ir)
     }
     free(ir->instrs);
     free(ir->bits_to_measure);
+    free(ir->errs);
     free(ir);
 }
 

@@ -14,6 +14,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Forward declaration – full definition lives in error.h */
+struct medusa_err_info;
+
 /* ------------------------------------------------------------------ */
 /*  Gate kinds                                                         */
 /* ------------------------------------------------------------------ */
@@ -135,6 +138,9 @@ typedef struct circuit_ir {
 
     int          *bits_to_measure; ///< qubit -> classical bit mapping (NULL if none)
     bool          has_measure;    ///< true if any measure instruction was added
+
+    struct medusa_err_info *errs;  ///< simulation error info
+    int err_count;                 ///< number of errors recorded
 } circuit_ir_t;
 
 /* ------------------------------------------------------------------ */

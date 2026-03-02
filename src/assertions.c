@@ -8,8 +8,8 @@
 #include "medusa.h"
 #include "sim.h"
 
-void
-assert_equal(const char *expected_state, double prob_threshold, MTBDD *circ)
+int
+assert_equal(circuit_ir_t *ir, const char *expected_state, double prob_threshold, MTBDD *circ)
 {
     cnum *value;
     double prob;
@@ -29,13 +29,16 @@ assert_equal(const char *expected_state, double prob_threshold, MTBDD *circ)
     prob = calculate_prob(value);
 
     if (fabs(prob - prob_threshold) > EPSILON) {
-        error_exit("Assertion failed: expected probability of state |%s> is %f, but got %f\n",
+        error_set(ir, -1, "Assertion failed: expected probability of state |%s> is %f, but got %f\n",
                 expected_state, prob_threshold, prob);
+        return 1;
     }
+
+    return 0;
 }
 
-void
-assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint32_t circ_nqubits, MTBDD *circ)
+int
+assert_superposition(circuit_ir_t *ir, uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint32_t circ_nqubits, MTBDD *circ)
 {
     int r;
     char **indices = NULL;
@@ -43,7 +46,8 @@ assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint3
 
     r = medusa_get_counts(*circ, circ_nqubits, &indices, &probs);
     if (r) {
-        error_exit("Error occurred while retrieving state probabilities for superposition assertion.\n");
+        error_set(ir, -1, "Error occurred while retrieving state probabilities for superposition assertion.\n");
+        return 1;
     }
 
     /* a qubit is in superposition if the probability of it being in state |1> is between 0 and 1 (exclusive),
@@ -57,12 +61,15 @@ assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint3
         }
 
         if ((sum == 0) || (sum == 1)) {
-            error_exit("Assertion failed: qubit %u is not in superposition (probability of being in state |1> is %f)\n",
+            error_set(ir, -1, "Assertion failed: qubit %u is not in superposition (probability of being in state |1> is %f)\n",
                     qubits_to_check[i], sum);
+            medusa_free_counts(indices, probs);
+            return 1;
         }
     }
 
     medusa_free_counts(indices, probs);
+    return 0;
 }
 
 /**
@@ -70,11 +77,12 @@ assert_superposition(uint32_t *qubits_to_check, uint32_t nqubits_to_check, uint3
  * (i.e. there is a gate that has them both as operands).
  */
 static int
-qubits_are_connected(uint32_t q1, uint32_t q2, const circuit_ir_t *ir)
+qubits_are_connected(uint32_t q1, uint32_t q2, circuit_ir_t *ir)
 {
     if (q1 >= ir->n_qubits || q2 >= ir->n_qubits) {
-        error_exit("Invalid qubit index in entanglement assertion: %u or %u is out of bounds (circuit has %u qubits)\n",
+        error_set(ir, -1, "Invalid qubit index in entanglement assertion: %u or %u is out of bounds (circuit has %u qubits)\n",
                 q1, q2, ir->n_qubits);
+        return -1;  /* error */
     }
 
     if (!ir->qubit_interactions) {
@@ -116,8 +124,8 @@ qubits_are_connected(uint32_t q1, uint32_t q2, const circuit_ir_t *ir)
     return 0;
 }
 
-void
-assert_entanglement(uint32_t *qubits_to_check, uint32_t nqubits_to_check, const circuit_ir_t *ir, MTBDD *circ)
+int
+assert_entanglement(circuit_ir_t *ir, uint32_t *qubits_to_check, uint32_t nqubits_to_check, MTBDD *circ)
 {
     /* Check that every pair of qubits in qubits_to_check interacts with each other */
     for (uint32_t i = 0; i < nqubits_to_check; i++) {
@@ -125,9 +133,17 @@ assert_entanglement(uint32_t *qubits_to_check, uint32_t nqubits_to_check, const 
         for (uint32_t j = i + 1; j < nqubits_to_check; j++) {
             uint32_t q2 = qubits_to_check[j];
 
-            if (!qubits_are_connected(q1, q2, ir)) {
-                error_exit("Assertion failed: qubits %u and %u are not entangled\n", q1, q2);
+            int connected = qubits_are_connected(q1, q2, ir);
+            if (connected < 0) {
+                /* error already set by qubits_are_connected */
+                return 1;
+            }
+            if (!connected) {
+                error_set(ir, -1, "Assertion failed: qubits %u and %u are not entangled\n", q1, q2);
+                return 1;
             }
         }
     }
+
+    return 0;
 }

@@ -35,7 +35,7 @@ static symexp_list_t* symexp_htab_add(symexp_list_t *l)
 symexp_list_t* symexp_init(vars_t v)
 {
     symexp_list_t *res = symexp_list_create();
-    
+
     symexp_val_t first_val;
     first_val.var = v;
     mpz_init_set_ui(first_val.coef, 1);
@@ -66,7 +66,7 @@ symexp_list_t* symexp_op(symexp_list_t *a, symexp_list_t *b, symexp_op_t op)
     else if (a == NULL && op == SYMEXP_ADD) {
         return b;
     }
-    
+
     symexp_list_t *res;
     // Case: NULL - b
     if (a == NULL && op == SYMEXP_SUB) {

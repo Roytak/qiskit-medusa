@@ -45,6 +45,14 @@ lib.medusa_init.restype = None
 lib.medusa_destroy.argtypes = []
 lib.medusa_destroy.restype = None
 
+# const char *medusa_get_last_error(circuit_ir_t *ir, int *line);
+lib.medusa_get_last_error.argtypes = [CIRCUIT_HANDLE, ctypes.POINTER(c_int)]
+lib.medusa_get_last_error.restype = c_char_p
+
+# void medusa_clear_error(circuit_ir_t *ir);
+lib.medusa_clear_error.argtypes = [CIRCUIT_HANDLE]
+lib.medusa_clear_error.restype = None
+
 # -- Circuit handle lifecycle --
 
 # circuit_ir_t *medusa_circuit_create(void);
@@ -302,11 +310,23 @@ class MedusaWrapper:
     # -- Simulation --
 
     def simulate_circuit(self, handle, symbolic: bool = False):
-        """Simulates a circuit built via the handle API. Returns the MTBDD."""
+        """Simulates a circuit built via the handle API. Returns the MTBDD.
+
+        Raises RuntimeError if the simulation fails (e.g. due to a
+        violated assertion).  The exception message contains the
+        details reported by the C layer.
+        """
         mtbdd = MTBDD()
         res = lib.medusa_simulate_circuit(handle, 1 if symbolic else 0, ctypes.byref(mtbdd))
         if res != 0:
-            raise RuntimeError("Circuit simulation failed")
+            err = lib.medusa_get_last_error(handle, None)
+            if err:
+                msg = err.decode('utf-8', errors='replace')
+                if msg.endswith('\n'):
+                    msg = msg[:-1]
+            else:
+                msg = "Circuit simulation failed with unknown error"
+            raise RuntimeError(msg)
         return mtbdd
 
     def get_counts(self, shots = 1024, num_qubits=None, mtbdd=None):

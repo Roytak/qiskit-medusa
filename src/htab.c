@@ -135,7 +135,7 @@ static void htab_resize(htab_t *t, size_t newn, size_t (*hash_func)(htab_key_t))
     htab_item_t *curr;
     htab_item_t *temp; // aux ptr to the elem in the new arr
     size_t new_index; // aux var for the new index of the current elem
-    
+
     for (size_t i = 0; i < t->arr_size; i++) {
         curr = t->arr_ptr[i];
 

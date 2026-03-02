@@ -757,8 +757,10 @@ static void dispatch_gate(const gate_instr_t *instr, bool use_symb,
     }
 }
 
-bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
+bool simulate_ir(circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
 {
+    bool success = true;
+
     if (!ir || ir->n_qubits == 0) {
         return false;
     }
@@ -774,7 +776,7 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
 
     /* Walk the instruction list */
     size_t pc = 0;
-    while (pc < ir->len) {
+    while (pc < ir->len && success) {
         const gate_instr_t *instr = &ir->instrs[pc];
 
         switch (instr->kind) {
@@ -838,7 +840,8 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
         /* ---- Loop end (should only be reached via loop start) -- */
         case GATE_LOOP_END:
             /* Reached only if something is wrong; loops jump past this. */
-            error_exit("Unexpected GATE_LOOP_END at instruction %zu.\n", pc);
+            error_set(ir, -1, "Unexpected GATE_LOOP_END at instruction %zu.\n", pc);
+            success = false;
             break;
 
         /* ---- Measurement (just recorded in the IR, nothing to execute) ---- */
@@ -848,15 +851,18 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
 
         /* ---- Assertions --------------------------------- */
         case GATE_ASSERT_EQ:
-            assert_equal(instr->p.assert.state_str, instr->p.assert.prob, circ);
+            if (assert_equal(ir, instr->p.assert.state_str, instr->p.assert.prob, circ))
+                success = false;
             break;
 
         case GATE_ASSERT_SUP:
-            assert_superposition(instr->p.assert.qubits, instr->p.assert.n_qubits, ir->n_qubits, circ);
+            if (assert_superposition(ir, instr->p.assert.qubits, instr->p.assert.n_qubits, ir->n_qubits, circ))
+                success = false;
             break;
 
         case GATE_ASSERT_ENT:
-            assert_entanglement(instr->p.assert.qubits, instr->p.assert.n_qubits, ir, circ);
+            if (assert_entanglement(ir, instr->p.assert.qubits, instr->p.assert.n_qubits, circ))
+                success = false;
             break;
 
         /* ---- All regular gates --------------------------------- */
@@ -872,7 +878,7 @@ bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
         symexp_htab_clear();
     }
 
-    return true;
+    return success;
 }
 
 /* ================================================================== */

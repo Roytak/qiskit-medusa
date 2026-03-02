@@ -55,7 +55,7 @@ static void rdata_add(rdata_t *rd, vars_t old, vars_t new, symexp_list_t *data)
     new_ref_elem->new = new;
     new_ref_elem->next = rd->ref->first;
     rd->ref->first = new_ref_elem;
-    
+
     if (new >= rd->upd->size) {
         // resize
         rd->upd->size *= UPDATE_RESIZE_COEF;
@@ -94,7 +94,7 @@ static vars_t refine_var_check(vars_t var, symexp_list_t *data, rdata_t *rd)
     // check if the same update already doesn't exist
     rdata_ref_first(rd);
     while(rd->ref->cur) {
-        if ((rd->ref->cur->old == var) && 
+        if ((rd->ref->cur->old == var) &&
             ((data == SYMEXP_NULL && rd->upd->arr[rd->ref->cur->new] == SYMEXP_NULL) ||
              (data != SYMEXP_NULL && symexp_cmp(data, rd->upd->arr[rd->ref->cur->new]))
             )) {
@@ -152,15 +152,15 @@ TASK_IMPL_3(MTBDD, mtbdd_symb_refine, MTBDD*, p_map, MTBDD*, p_val, size_t, rd_r
 }
 /**
  * Computes refine on the symbolic MTBDD pair
- * 
+ *
  * @param p_map pointer to a symbolic map MTBDD
- * 
+ *
  * @param p_val pointer to a symbolic value MTBDD
- * 
+ *
  * @param rdata ptr to structure cointaining all the data needed for refine (update, refine and map data structures)
- * 
+ *
  * @param opid opid needed for the Sylvan's apply
- * 
+ *
  */
 #define my_mtbdd_symb_refine(p_map, p_val, rdata) \
         mtbdd_applyp(p_map, p_val, (size_t)rdata, TASK(mtbdd_symb_refine), apply_mtbdd_symb_refine_id)
@@ -229,7 +229,7 @@ static bool can_be_reduced(mtbdd_symb_t *symbc, rdata_t *rdata)
     // The whole leaf behaves the same way, so checking every 4th variable is sufficient
     for (int i = 0; i < rdata->vm->next_var; i += 4) {
         // If leaf is initially 0:
-        if (!mpz_sgn(rdata->vm->map[i]) && !mpz_sgn(rdata->vm->map[i+1]) 
+        if (!mpz_sgn(rdata->vm->map[i]) && !mpz_sgn(rdata->vm->map[i+1])
             && !mpz_sgn(rdata->vm->map[i+2]) && !mpz_sgn(rdata->vm->map[i+3])) {
             is_zero[i] = true;
             is_zero[i+1] = true;
@@ -246,7 +246,7 @@ static bool can_be_reduced(mtbdd_symb_t *symbc, rdata_t *rdata)
         }
     }
 
-    // Check if swap with 0 leaf occurs 
+    // Check if swap with 0 leaf occurs
     // (i.e., if these variables appear alone on some right side of update equation)
     for(int i = 0; i < rdata->vm->next_var; i +=4) {
         // Check for permutations as well, first variable of the leaf is sufficient

@@ -7,6 +7,26 @@
 #include "circuit_ir.h"
 
 /* ------------------------------------------------------------------ */
+/*  Error reporting                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Returns the last error message set during simulation.
+ *
+ * @param[in] ir The circuit IR handle to query for the last error.
+ * @param[out] line The line number of the error, or -1 if not available.
+ * @return The last error message, or an empty string if no error.
+ */
+const char *medusa_get_last_error(circuit_ir_t *ir, int *line);
+
+/**
+ * @brief Clears the last error message.
+ *
+ * @param[in] ir The circuit IR handle to clear the error for.
+ */
+void medusa_clear_error(circuit_ir_t *ir);
+
+/* ------------------------------------------------------------------ */
 /*  Library lifecycle                                                   */
 /* ------------------------------------------------------------------ */
 

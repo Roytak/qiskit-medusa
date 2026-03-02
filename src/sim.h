@@ -57,7 +57,7 @@ circuit_ir_t *parse_qasm(FILE *in);
  *
  * @return true if the circuit has been properly simulated
  */
-bool simulate_ir(const circuit_ir_t *ir, int is_symbolic, MTBDD *circ);
+bool simulate_ir(circuit_ir_t *ir, int is_symbolic, MTBDD *circ);
 
 /**
  * Convenience wrapper: parses a QASM file and simulates it in one call.

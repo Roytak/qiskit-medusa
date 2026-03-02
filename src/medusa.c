@@ -8,6 +8,7 @@
 #include <sylvan_int.h>
 
 #include "circuit_ir.h"
+#include "error.h"
 #include "medusa.h"
 #include "mtbdd.h"
 #include "sim.h"
@@ -31,6 +32,38 @@ void
 medusa_destroy(void)
 {
     stop_sylvan();
+}
+
+const char *
+medusa_get_last_error(circuit_ir_t *ir, int *line)
+{
+    const char *msg;
+    int l;
+
+    if (!ir) {
+        fprintf(stderr, "Invalid circuit IR handle\n");
+        if (line) {
+            *line = -1;
+        }
+        return "Invalid circuit IR handle";
+    }
+
+    error_get_last(ir, &msg, &l);
+    if (line) {
+        *line = l;
+    }
+    return msg;
+}
+
+void
+medusa_clear_error(circuit_ir_t *ir)
+{
+    if (!ir) {
+        fprintf(stderr, "Invalid circuit IR handle\n");
+        return;
+    }
+
+    error_clear(ir);
 }
 
 circuit_ir_t *
