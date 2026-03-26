@@ -49,7 +49,7 @@ class AssertSuperposition(Instruction):
 
 class AssertEntangled(Instruction):
     """
-    Assertion that the listed qubits are in an entangled state.
+    Assertion that two listed qubits are in an entangled state.
 
     Usage::
 
@@ -58,6 +58,19 @@ class AssertEntangled(Instruction):
 
     def __init__(self, num_qubits: int, label=None):
         super().__init__("assert_ent", num_qubits, 0, [], label=label)
+
+
+class AssertInteract(Instruction):
+    """
+    Assertion that the listed qubits are connected by interactions in the circuit.
+
+    Usage::
+
+        qc.append(AssertInteract(num_qubits=3), [0, 1, 2])
+    """
+
+    def __init__(self, num_qubits: int, label=None):
+        super().__init__("assert_interact", num_qubits, 0, [], label=label)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +121,7 @@ def _assert_entangled(self, qubits):
     Parameters
     ----------
     qubits : int | list[int]
-        Qubit index or list of qubit indices (at least 2).
+        List of exactly two qubit indices.
 
     Returns
     -------
@@ -117,13 +130,35 @@ def _assert_entangled(self, qubits):
     """
     if isinstance(qubits, int):
         qubits = [qubits]
+    if len(qubits) != 2:
+        raise ValueError("assert_entangled requires exactly 2 qubits")
     self.append(AssertEntangled(num_qubits=len(qubits)), qubits, [])
+    return self
+
+
+def _assert_interact(self, qubits):
+    """Assert that the given qubits are connected by interactions in the circuit.
+
+    Parameters
+    ----------
+    qubits : int | list[int]
+        Qubit index or list of qubit indices.
+
+    Returns
+    -------
+    QuantumCircuit
+        *self*, so calls can be chained.
+    """
+    if isinstance(qubits, int):
+        qubits = [qubits]
+    self.append(AssertInteract(num_qubits=len(qubits)), qubits, [])
     return self
 
 # monkey-patch the assertion methods onto QuantumCircuit
 QuantumCircuit.assert_eq = _assert_eq
 QuantumCircuit.assert_superposition = _assert_superposition
 QuantumCircuit.assert_entangled = _assert_entangled
+QuantumCircuit.assert_interact = _assert_interact
 
 
 class SYGate(Gate):
@@ -215,6 +250,9 @@ class MedusaJob(JobV1):
             elif name == 'assert_ent':
                 self._wrapper.add_assert_ent(self._handle, qubits)
 
+            elif name == 'assert_interact':
+                self._wrapper.add_assert_interact(self._handle, qubits)
+
             # -- control flow: for loop --
             elif name == 'for_loop':
                 indexset, _loop_param, body = op.params
@@ -255,8 +293,11 @@ class MedusaJob(JobV1):
                 mtbdd=mtbdd,
             )
 
-            # only keep non-zero counts
-            counts = {k: v for k, v in counts.items() if v > 0}
+            # only keep non-zero counts and convert bitstrings to hex keys
+            counts = {
+                hex(int(k, 2)): v
+                for k, v in counts.items() if v > 0 and k
+            }
 
             # format result
             data = {
@@ -373,6 +414,7 @@ class MedusaBackend(BackendV2):
         self._target.add_instruction(AssertEq("0", 1.0), name="assert_eq", properties=ideal_props)
         self._target.add_instruction(AssertSuperposition(num_qubits=1), name="assert_sup", properties=ideal_props)
         self._target.add_instruction(AssertEntangled(num_qubits=2), name="assert_ent", properties=ideal_props)
+        self._target.add_instruction(AssertInteract(num_qubits=2), name="assert_interact", properties=ideal_props)
 
         # Control Flow
         self._target.add_instruction(ForLoopOp, name="for_loop")

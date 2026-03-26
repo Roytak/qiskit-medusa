@@ -96,7 +96,7 @@ void circuit_ir_destroy(circuit_ir_t *ir)
             free(ir->instrs[i].p.multi.qubits);
         } else if (ir->instrs[i].kind == GATE_ASSERT_EQ) {
             free(ir->instrs[i].p.assert.state_str);
-        } else if (ir->instrs[i].kind == GATE_ASSERT_SUP || ir->instrs[i].kind == GATE_ASSERT_ENT) {
+        } else if (ir->instrs[i].kind == GATE_ASSERT_SUP || ir->instrs[i].kind == GATE_ASSERT_INTERACT || ir->instrs[i].kind == GATE_ASSERT_ENT) {
             free(ir->instrs[i].p.assert.qubits);
         }
     }
@@ -219,6 +219,16 @@ circuit_ir_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
 {
     gate_instr_t instr = {
         .kind = GATE_ASSERT_SUP,
+        .p.assert = { .qubits = qubits, .n_qubits = n_qubits }
+    };
+    push_instr(ir, instr);
+}
+
+void
+circuit_ir_add_assert_interact(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits)
+{
+    gate_instr_t instr = {
+        .kind = GATE_ASSERT_INTERACT,
         .p.assert = { .qubits = qubits, .n_qubits = n_qubits }
     };
     push_instr(ir, instr);

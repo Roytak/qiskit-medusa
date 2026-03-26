@@ -198,6 +198,16 @@ int medusa_add_assert_eq(circuit_ir_t *ir, const char *state_str, double prob_th
 int medusa_add_assert_sup(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
 
 /**
+ * @brief Adds an assertion that a given set of qubits is interaction-connected.
+ *
+ * @param[in] ir  The circuit IR handle.
+ * @param[in] qubits    Array of qubit indices to be asserted as interaction-connected.
+ * @param[in] n_qubits  Number of qubits in the array.
+ * @return 0 on success, non-zero on failure.
+ */
+int medusa_add_assert_interact(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
+
+/**
  * @brief Adds an assertion that a given set of qubits is in an entangled state.
  *
  * @param[in] ir  The circuit IR handle.

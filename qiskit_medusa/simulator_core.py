@@ -145,6 +145,10 @@ lib.medusa_add_assert_eq.restype = c_int
 lib.medusa_add_assert_sup.argtypes = [CIRCUIT_HANDLE, ctypes.POINTER(c_uint32), c_uint32]
 lib.medusa_add_assert_sup.restype = c_int
 
+# int medusa_add_assert_interact(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
+lib.medusa_add_assert_interact.argtypes = [CIRCUIT_HANDLE, ctypes.POINTER(c_uint32), c_uint32]
+lib.medusa_add_assert_interact.restype = c_int
+
 # int medusa_add_assert_ent(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits);
 lib.medusa_add_assert_ent.argtypes = [CIRCUIT_HANDLE, ctypes.POINTER(c_uint32), c_uint32]
 lib.medusa_add_assert_ent.restype = c_int
@@ -299,6 +303,13 @@ class MedusaWrapper:
         arr = (c_uint32 * n)(*qubits)
         if lib.medusa_add_assert_sup(handle, arr, n) != 0:
             raise RuntimeError("Failed to add assert_sup")
+
+    def add_assert_interact(self, handle, qubits: list):
+        """Adds an assertion that qubits are connected by circuit interactions."""
+        n = len(qubits)
+        arr = (c_uint32 * n)(*qubits)
+        if lib.medusa_add_assert_interact(handle, arr, n) != 0:
+            raise RuntimeError("Failed to add assert_interact")
 
     def add_assert_ent(self, handle, qubits: list):
         """Adds an assertion that a given set of qubits is in an entangled state."""

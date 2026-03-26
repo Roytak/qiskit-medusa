@@ -27,5 +27,7 @@ dev = [
 [tool.scikit-build]
 # ensure that libmedusa.so ends up inside your python package folder
 cmake.version = ">=3.15"
+cmake.build-type = "Debug"
 wheel.packages = ["qiskit_medusa"]
 install.components = ["runtime"]
+install.strip = false

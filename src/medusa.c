@@ -290,6 +290,25 @@ medusa_add_assert_sup(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubit
 }
 
 int
+medusa_add_assert_interact(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits)
+{
+    if (!ir || !qubits || n_qubits == 0) {
+        fprintf(stderr, "Invalid arguments to medusa_add_assert_interact\n");
+        return 1;
+    }
+
+    uint32_t *dup = malloc(n_qubits * sizeof(uint32_t));
+    if (!dup) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
+    memcpy(dup, qubits, n_qubits * sizeof(uint32_t));
+
+    circuit_ir_add_assert_interact(ir, dup, n_qubits);
+    return 0;
+}
+
+int
 medusa_add_assert_ent(circuit_ir_t *ir, const uint32_t *qubits, uint32_t n_qubits)
 {
     if (!ir || !qubits || n_qubits == 0) {

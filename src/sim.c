@@ -471,16 +471,19 @@ circuit_ir_t *parse_qasm(FILE *in)
 
                 circuit_ir_add_assert_eq(ir, state_str, prob);
             }
-            else if ((strcmp(cmd, "assert-sup") == 0) || (strcmp(cmd, "assert-ent") == 0)) {
-                /* parse expected format: assert-sup/ent q0, q1, ..., qn;
-                 * where q0, q1, ..., qn is the list of qubits that should be in the superposition/entangled state
+            else if ((strcmp(cmd, "assert-sup") == 0) || (strcmp(cmd, "assert-ent") == 0)
+                     || (strcmp(cmd, "assert-int") == 0) || (strcmp(cmd, "assert-interact") == 0)) {
+                /* parse expected format: assert-sup/assert-ent/assert-int q0, q1, ..., qn;
+                 * where q0, q1, ..., qn is the list of qubits used by the selected assertion
                 */
 
-                int is_sup;
+                int assertion_kind;
                 if (strcmp(cmd, "assert-sup") == 0) {
-                    is_sup = 1;
+                    assertion_kind = GATE_ASSERT_SUP;
+                } else if (strcmp(cmd, "assert-ent") == 0) {
+                    assertion_kind = GATE_ASSERT_ENT;
                 } else {
-                    is_sup = 0;
+                    assertion_kind = GATE_ASSERT_INTERACT;
                 }
 
                 /* read the whole line until ';' */
@@ -528,15 +531,15 @@ circuit_ir_t *parse_qasm(FILE *in)
                         token++;
                     }
                     if (*token == '\0') {
-                        error_exit("Invalid format - empty qubit identifier in assert-%s command.\n", is_sup ? "sup" : "ent");
+                        error_exit("Invalid format - empty qubit identifier in %s command.\n", cmd);
                     } else if (*token != 'q') {
-                        error_exit("Invalid format - expected qubit identifier starting with 'q' in assert-%s command.\n", is_sup ? "sup" : "ent");
+                        error_exit("Invalid format - expected qubit identifier starting with 'q' in %s command.\n", cmd);
                     }
 
                     /* skip the 'q' character */
                     token++;
                     if (!isdigit(*token)) {
-                        error_exit("Invalid format - expected a number after 'q' in qubit identifier in assert-%s command.\n", is_sup ? "sup" : "ent");
+                        error_exit("Invalid format - expected a number after 'q' in qubit identifier in %s command.\n", cmd);
                     }
 
                     /* parse the qubit index from the token */
@@ -544,16 +547,21 @@ circuit_ir_t *parse_qasm(FILE *in)
                     errno = 0;
                     long n = strtol(token, &endptr, 10);
                     if (token == endptr || errno != 0 || n < 0 || n > UINT32_MAX) {
-                        error_exit("Invalid format - not a valid qubit identifier in assert-%s command.\n", is_sup ? "sup" : "ent");
+                        error_exit("Invalid format - not a valid qubit identifier in %s command.\n", cmd);
                     }
                     qubits[idx++] = (uint32_t)n;
 
                     token = strtok_r(NULL, ",", &saveptr);
                 }
 
-                if (is_sup) {
+                if (assertion_kind == GATE_ASSERT_SUP) {
                     circuit_ir_add_assert_sup(ir, qubits, nqubits);
+                } else if (assertion_kind == GATE_ASSERT_INTERACT) {
+                    circuit_ir_add_assert_interact(ir, qubits, nqubits);
                 } else {
+                    if (nqubits != 2) {
+                        error_exit("Invalid format - assert-ent requires exactly 2 qubits.\n");
+                    }
                     circuit_ir_add_assert_ent(ir, qubits, nqubits);
                 }
             }
@@ -752,6 +760,7 @@ static void dispatch_gate(const gate_instr_t *instr, bool use_symb,
     case GATE_LOOP_END:
     case GATE_ASSERT_EQ:
     case GATE_ASSERT_SUP:
+    case GATE_ASSERT_INTERACT:
     case GATE_ASSERT_ENT:
         break;
     }
@@ -857,6 +866,11 @@ bool simulate_ir(circuit_ir_t *ir, int is_symbolic, MTBDD *circ)
 
         case GATE_ASSERT_SUP:
             if (assert_superposition(ir, instr->p.assert.qubits, instr->p.assert.n_qubits, ir->n_qubits, circ))
+                success = false;
+            break;
+
+        case GATE_ASSERT_INTERACT:
+            if (assert_interact(ir, instr->p.assert.qubits, instr->p.assert.n_qubits, circ))
                 success = false;
             break;
 

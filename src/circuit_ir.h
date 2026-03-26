@@ -49,6 +49,7 @@ typedef enum {
     /* Assertions */
     GATE_ASSERT_EQ,
     GATE_ASSERT_SUP,
+    GATE_ASSERT_INTERACT,
     GATE_ASSERT_ENT,
 
     /* Loop control */
@@ -207,6 +208,12 @@ void circuit_ir_add_assert_eq(circuit_ir_t *ir, char *state_str, double prob_thr
  * (i.e. the probability of them being in state |1> is between 0 and 1 exclusive).
  */
 void circuit_ir_add_assert_sup(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
+
+/**
+ * Adds an assertion that the specified qubits are interaction-connected
+ * through multi-qubit gate interactions in the circuit.
+ */
+void circuit_ir_add_assert_interact(circuit_ir_t *ir, uint32_t *qubits, uint32_t n_qubits);
 
 /**
  * Adds an assertion that the specified qubits are entangled
